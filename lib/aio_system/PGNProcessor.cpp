@@ -61,12 +61,17 @@ void PGNProcessor::processPGN(const uint8_t* data, size_t len, const IPAddress& 
             uint8_t pgn = data[3];
             
             // Special handling for AgIO PGNs (200, 201, 202) which use fixed CRC 0x47
+            // PGN 202 scan requests may also carry new-format CRC 0xE5 (extended reply requested)
             if (pgn == 200 || pgn == 201 || pgn == 202) {
                 uint8_t receivedCRC = data[len - 1];
-                if (receivedCRC != 0x47) {
-                    LOG_WARNING(EventSource::NETWORK, "AgIO PGN %d invalid fixed CRC: expected 0x47, got %02X", 
+                if (receivedCRC != 0x47 && receivedCRC != 0xE5) {
+                    LOG_WARNING(EventSource::NETWORK, "AgIO PGN %d invalid fixed CRC: expected 0x47 or 0xE5, got %02X", 
                                pgn, receivedCRC);
                     return; // Drop packet with bad CRC
+                }
+                // For scan requests: record whether AgIO wants the extended reply format
+                if (pgn == 202) {
+                    lastScanWasNewFormat = (receivedCRC == 0xE5);
                 }
                 // AgIO packets validated - continue processing
             } else {

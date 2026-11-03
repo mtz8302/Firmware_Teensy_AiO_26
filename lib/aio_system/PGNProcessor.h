@@ -77,6 +77,11 @@ public:
     bool isReceivingFromAgIO() const { 
         return (millis() - lastPGNReceivedTime) < 5000; 
     }
+
+    // Set by processPGN when a PGN 202 scan request is received.
+    // true  = new extended format (CRC 0xE5) -> send extended PGN 203 reply
+    // false = classic format    (CRC 0x47) -> send classic 13-byte PGN 203 reply
+    bool lastScanWasNewFormat = false;
 };
 
 #endif // PGNProcessor_H_

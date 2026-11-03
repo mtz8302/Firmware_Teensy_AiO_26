@@ -87,7 +87,8 @@
       "capabilities": {
         "V_Bus": ["steering"],
         "K_Bus": [],
-        "ISO_Bus": []
+        "ISO_Bus": [],
+        "None": ["keya"]
       },
       "uiNotes": null,
 

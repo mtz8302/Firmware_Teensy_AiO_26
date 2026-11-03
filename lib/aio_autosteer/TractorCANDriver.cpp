@@ -1,4 +1,4 @@
-// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
+﻿// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
 // Firmware_Teensy_AiO-New-Dawn is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 // Firmware_Teensy_AiO-New-Dawn is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
@@ -19,9 +19,10 @@ bool TractorCANDriver::init() {
     // Assign CAN bus pointers based on configuration
     assignCANBuses();
 
-    // Try to load JSON config for data-driven protocol engine
-    // Skip for Keya motors (separate protocol) and disabled brand
-    if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED) && !hasKeyaFunction()) {
+    // Try to load JSON config for data-driven protocol engine.
+    // Keya's motor bus is always physically separate hardware from any real tractor CAN bus,
+    // so a real WAS-over-CAN feed (parsed here) can coexist with Keya as the actuator.
+    if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED)) {
         if (CANConfigStorage::hasCustomConfig()) {
             String json = CANConfigStorage::readCustomConfig();
             if (json.length() > 0) {
@@ -50,23 +51,25 @@ void TractorCANDriver::assignCANBuses() {
     buttonCAN = nullptr;
     hitchBusNum = 0;
     hitchCAN = nullptr;
+    keyaBusNum = 0;
+    keyaCAN = nullptr;
 
-    // For Keya function, find which bus has it
-    if (hasKeyaFunction()) {
-        if (config.can1Function & static_cast<uint8_t>(CANFunction::KEYA)) {
-            steerBusNum = 1;
-            steerCAN = getBusPointer(1);
-        } else if (config.can2Function & static_cast<uint8_t>(CANFunction::KEYA)) {
-            steerBusNum = 2;
-            steerCAN = getBusPointer(2);
-        } else if (config.can3Function & static_cast<uint8_t>(CANFunction::KEYA)) {
-            steerBusNum = 3;
-            steerCAN = getBusPointer(3);
-        }
+    // Keya's motor bus is always physically separate hardware from any other CAN bus,
+    // so it's assigned independently of the real steering/WAS bus below - both can be
+    // configured at once (e.g. ISOBUS on CAN1 for real WAS, Keya on CAN3 for the motor).
+    if (config.can1Function & static_cast<uint8_t>(CANFunction::KEYA)) {
+        keyaBusNum = 1;
+        keyaCAN = getBusPointer(1);
+    } else if (config.can2Function & static_cast<uint8_t>(CANFunction::KEYA)) {
+        keyaBusNum = 2;
+        keyaCAN = getBusPointer(2);
+    } else if (config.can3Function & static_cast<uint8_t>(CANFunction::KEYA)) {
+        keyaBusNum = 3;
+        keyaCAN = getBusPointer(3);
     }
-    // For other brands, find bus with steering function
-    else if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED)) {
-        // Check which bus has steering function
+
+    if (config.brand != static_cast<uint8_t>(TractorBrand::DISABLED)) {
+        // Check which bus has steering function (real valve or real WAS-over-CAN feed)
         if (config.can1Function & static_cast<uint8_t>(CANFunction::STEERING)) {
             steerBusNum = 1;
             steerCAN = getBusPointer(1);
@@ -160,9 +163,12 @@ void TractorCANDriver::process() {
     // Process incoming CAN messages
     processIncomingMessages();
 
-    // Send commands if we have a steering bus configured
-    // For Keya, we need to send commands even when disabled to keep CAN alive
-    if (steerCAN && steerBusNum > 0) {
+    // Send commands on whichever bus actually drives the actuator: Keya's own bus when
+    // present, otherwise the real steering-valve bus. For Keya, we need to send commands
+    // even when disabled to keep CAN alive.
+    bool haveActuatorBus = hasKeyaFunction() ? (keyaCAN && keyaBusNum > 0)
+                                              : (steerCAN && steerBusNum > 0);
+    if (haveActuatorBus) {
         sendSteerCommands();
     }
 
@@ -193,23 +199,32 @@ void TractorCANDriver::process() {
 void TractorCANDriver::processIncomingMessages() {
     CAN_message_t msg;
 
-    // Process messages from each configured bus
-    if (steerCAN && steerBusNum > 0) {
+    // Keya motor bus - always its own physically separate CAN bus
+    if (keyaCAN && keyaBusNum > 0) {
+        while (readCANMessage(keyaBusNum, msg)) {
+            processKeyaMessage(msg);
+        }
+    }
+
+    // Real steering/WAS bus (tractor's own valve or a real WAS reported over CAN, e.g.
+    // ISOBUS/K-Bus) - independent of Keya, so both can be configured at once.
+    if (steerCAN && steerBusNum > 0 && steerBusNum != keyaBusNum) {
         while (readCANMessage(steerBusNum, msg)) {
-            // If this bus has Keya function, process Keya messages
-            if (hasKeyaFunction()) {
-                processKeyaMessage(msg);
-            } else if (useProtocolEngine) {
+            if (useProtocolEngine) {
                 // Data-driven path: protocol engine handles all brands
                 protocolEngine.setAutosteerActive(enabled);
                 protocolEngine.processIncomingMessage(msg);
 
-                // Sync engine valve state back to TractorCANDriver state
-                if (protocolEngine.isValveReady()) {
-                    steerReady = true;
-                    lastSteerReadyTime = millis();
-                } else if (protocolEngine.isValveDataReceived()) {
-                    steerReady = false;
+                // Sync engine valve state back to TractorCANDriver state. When Keya is the
+                // actuator, steerReady is driven by its heartbeat instead - the tractor's
+                // own valve-ready bit is irrelevant to whether Keya can steer.
+                if (!hasKeyaFunction()) {
+                    if (protocolEngine.isValveReady()) {
+                        steerReady = true;
+                        lastSteerReadyTime = millis();
+                    } else if (protocolEngine.isValveDataReceived()) {
+                        steerReady = false;
+                    }
                 }
 
                 // Check for kickout detection
@@ -253,7 +268,7 @@ void TractorCANDriver::processIncomingMessages() {
     }
 
     // Process button bus messages if configured
-    if (buttonCAN && buttonBusNum > 0 && buttonBusNum != steerBusNum) {
+    if (buttonCAN && buttonBusNum > 0 && buttonBusNum != steerBusNum && buttonBusNum != keyaBusNum) {
         while (readCANMessage(buttonBusNum, msg)) {
             if (useProtocolEngine) {
                 // Protocol engine handles engage button detection from any bus
@@ -291,7 +306,7 @@ void TractorCANDriver::processIncomingMessages() {
     }
 
     // Process hitch bus messages if configured
-    if (hitchCAN && hitchBusNum > 0 && hitchBusNum != steerBusNum && hitchBusNum != buttonBusNum) {
+    if (hitchCAN && hitchBusNum > 0 && hitchBusNum != steerBusNum && hitchBusNum != buttonBusNum && hitchBusNum != keyaBusNum) {
         while (readCANMessage(hitchBusNum, msg)) {
             // TODO: Process hitch control messages
         }
@@ -358,6 +373,18 @@ void TractorCANDriver::processKeyaMessage(const CAN_message_t& msg) {
         motorCurrentX32 = motorCurrentX32 * 0.9f + (float)motorCurrent * 32.0f * 0.1f;
 
         motorErrorCode = (uint16_t)((msg.buf[6] << 8) | msg.buf[7]);
+
+        // Raw heartbeat diagnostic, independent of getPositionDelta()/WheelAngleFusion - shows
+        // whether the motor's own reported position/speed ever change at all, regardless of
+        // whether the fusion layer sees a delta. Rate-limited to avoid flooding at heartbeat rate.
+        static uint32_t lastRawLogTime = 0;
+        uint32_t rawNow = millis();
+        if (rawNow - lastRawLogTime > 1000) {
+            LOG_INFO(EventSource::AUTOSTEER,
+                      "Keya raw heartbeat: position=%u speed=%d current=%uA err=0x%04X",
+                      motorPosition, speedRaw, motorCurrent, motorErrorCode);
+            lastRawLogTime = rawNow;
+        }
 
         // Update status
         if (!steerReady) {
@@ -445,7 +472,7 @@ void TractorCANDriver::sendKeyaCommands() {
                 msg.buf[5] = 0x00;
                 msg.buf[6] = 0x00;
                 msg.buf[7] = 0x00;
-                writeCANMessage(steerBusNum, msg);
+                writeCANMessage(keyaBusNum, msg);
                 nextCommand = SEND_SPEED;
                 break;
 
@@ -462,7 +489,7 @@ void TractorCANDriver::sendKeyaCommands() {
                     msg.buf[5] = speedValue & 0xFF;          // DATA_L(L)
                     msg.buf[6] = (speedValue >> 24) & 0xFF;  // DATA_H(H)
                     msg.buf[7] = (speedValue >> 16) & 0xFF;  // DATA_H(L)
-                    writeCANMessage(steerBusNum, msg);
+                    writeCANMessage(keyaBusNum, msg);
                     nextCommand = SEND_ENABLE;
                 }
                 break;
@@ -481,7 +508,7 @@ void TractorCANDriver::sendKeyaCommands() {
             msg.buf[5] = 0x00;
             msg.buf[6] = 0x00;
             msg.buf[7] = 0x00;
-            writeCANMessage(steerBusNum, msg);
+            writeCANMessage(keyaBusNum, msg);
         } else {
             // Send zero speed command
             msg.buf[0] = 0x23;
@@ -492,7 +519,7 @@ void TractorCANDriver::sendKeyaCommands() {
             msg.buf[5] = 0x00;
             msg.buf[6] = 0x00;
             msg.buf[7] = 0x00;
-            writeCANMessage(steerBusNum, msg);
+            writeCANMessage(keyaBusNum, msg);
         }
 
         // Toggle for next time
@@ -504,25 +531,31 @@ void TractorCANDriver::sendKeyaCommands() {
 void TractorCANDriver::processFendtMessage(const CAN_message_t& msg) {
     // Check for Fendt valve status message (0x0CEF2CF0)
     if (msg.id == 0x0CEF2CF0 && msg.flags.extended) {
-        // Special valve ready detection for Fendt
-        // If message length is 3 and byte 2 is 0, valve is NOT ready
-        if (msg.len == 3 && msg.buf[2] == 0) {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Fendt steering valve not ready");
-            }
-            steerReady = false;
-        } else {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Fendt steering valve ready");
-            }
-            steerReady = true;
-            lastSteerReadyTime = millis();
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-            // Extract curve value if available (for feedback)
-            if (msg.len >= 2) {
-                // Fendt uses big-endian format
-                int16_t estCurve = (msg.buf[0] << 8) | msg.buf[1];
-                actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        // Extract curve value if available (real WAS-over-CAN feedback)
+        if (msg.len >= 2) {
+            // Fendt uses big-endian format
+            currentCurve = (msg.buf[0] << 8) | msg.buf[1];
+        }
+
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Special valve ready detection for Fendt
+            // If message length is 3 and byte 2 is 0, valve is NOT ready
+            if (msg.len == 3 && msg.buf[2] == 0) {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "Fendt steering valve not ready");
+                }
+                steerReady = false;
+            } else {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "Fendt steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
             }
         }
     }
@@ -590,21 +623,26 @@ void TractorCANDriver::processCaseIHMessage(const CAN_message_t& msg) {
     // Check for valve status message (0x0CACAA08)
     if (msg.id == 0x0CACAA08 && msg.flags.extended) {
         // Extract steering curve (little-endian)
-        int16_t estCurve = msg.buf[0] | (msg.buf[1] << 8);
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        currentCurve = msg.buf[0] | (msg.buf[1] << 8);
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-        // Check valve ready (byte 2)
-        if (msg.buf[2] != 0) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Case IH steering valve ready");
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Check valve ready (byte 2)
+            if (msg.buf[2] != 0) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "Case IH steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "Case IH steering valve not ready");
+                }
+                steerReady = false;
             }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Case IH steering valve not ready");
-            }
-            steerReady = false;
         }
     }
 }
@@ -672,20 +710,26 @@ void TractorCANDriver::processCATMessage(const CAN_message_t& msg) {
     if (msg.id == 0x0FFF9880 && msg.flags.extended) {
         // Extract steering curve from bytes 4-5 (big-endian)
         int16_t estCurve = (msg.buf[4] << 8) | msg.buf[5];
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        currentCurve = estCurve;
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-        // Check valve ready - curve value between 15000 and 17000
-        if (estCurve >= 15000 && estCurve <= 17000) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "CAT MT steering valve ready (curve=%d)", estCurve);
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Check valve ready - curve value between 15000 and 17000
+            if (estCurve >= 15000 && estCurve <= 17000) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "CAT MT steering valve ready (curve=%d)", estCurve);
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "CAT MT steering valve not ready (curve=%d)", estCurve);
+                }
+                steerReady = false;
             }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "CAT MT steering valve not ready (curve=%d)", estCurve);
-            }
-            steerReady = false;
         }
     }
 }
@@ -749,21 +793,26 @@ void TractorCANDriver::processClaasMessage(const CAN_message_t& msg) {
     // Check for valve status message (0x0CAC1E13)
     if (msg.id == 0x0CAC1E13 && msg.flags.extended) {
         // Extract steering curve (little-endian)
-        int16_t estCurve = msg.buf[0] | (msg.buf[1] << 8);
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        currentCurve = msg.buf[0] | (msg.buf[1] << 8);
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-        // Check valve ready (byte 2)
-        if (msg.buf[2] != 0) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Claas steering valve ready");
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Check valve ready (byte 2)
+            if (msg.buf[2] != 0) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "Claas steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "Claas steering valve not ready");
+                }
+                steerReady = false;
             }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Claas steering valve not ready");
-            }
-            steerReady = false;
         }
     }
 }
@@ -817,21 +866,26 @@ void TractorCANDriver::processJcbMessage(const CAN_message_t& msg) {
     // Module ID: 0xAB
     if (msg.id == 0x0CACAB13 && msg.flags.extended) {
         // Extract steering curve (little-endian)
-        int16_t estCurve = msg.buf[0] | (msg.buf[1] << 8);
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        currentCurve = msg.buf[0] | (msg.buf[1] << 8);
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-        // Check valve ready (byte 2)
-        if (msg.buf[2] != 0) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "JCB steering valve ready");
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Check valve ready (byte 2)
+            if (msg.buf[2] != 0) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "JCB steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "JCB steering valve not ready");
+                }
+                steerReady = false;
             }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "JCB steering valve not ready");
-            }
-            steerReady = false;
         }
     }
 }
@@ -885,21 +939,26 @@ void TractorCANDriver::processLindnerMessage(const CAN_message_t& msg) {
     // Module ID: 0xF0
     if (msg.id == 0x0CACF013 && msg.flags.extended) {
         // Extract steering curve (little-endian)
-        int16_t estCurve = msg.buf[0] | (msg.buf[1] << 8);
-        actualRPM = (float)estCurve / 100.0f;  // Store as scaled value
+        currentCurve = msg.buf[0] | (msg.buf[1] << 8);
+        valveDataSeen = true;
+        lastValveDataTime = millis();
 
-        // Check valve ready (byte 2)
-        if (msg.buf[2] != 0) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Lindner steering valve ready");
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Check valve ready (byte 2)
+            if (msg.buf[2] != 0) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "Lindner steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "Lindner steering valve not ready");
+                }
+                steerReady = false;
             }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Lindner steering valve not ready");
-            }
-            steerReady = false;
         }
     }
 }
@@ -953,23 +1012,28 @@ void TractorCANDriver::processValtraMessage(const CAN_message_t& msg) {
     if (msg.id == 0x0CAC1C13 && msg.flags.extended) {
         // Extract steering curve (little-endian)
         int16_t estCurve = (msg.buf[1] << 8) | msg.buf[0];
-
-        // Extract valve ready state from byte 2
-        if (msg.buf[2] != 0) {
-            if (!steerReady) {
-                LOG_INFO(EventSource::AUTOSTEER, "Valtra steering valve ready");
-            }
-            steerReady = true;
-            lastSteerReadyTime = millis();
-        } else {
-            if (steerReady) {
-                LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready");
-            }
-            steerReady = false;
-        }
-
         // Store raw curve value for CAN WAS feedback
         currentCurve = estCurve;
+        valveDataSeen = true;
+        lastValveDataTime = millis();
+
+        // Valve-ready bit only gates steerReady for a real valve install; when Keya is the
+        // actual actuator (on its own separate bus), steerReady comes from its heartbeat instead.
+        if (!hasKeyaFunction()) {
+            // Extract valve ready state from byte 2
+            if (msg.buf[2] != 0) {
+                if (!steerReady) {
+                    LOG_INFO(EventSource::AUTOSTEER, "Valtra steering valve ready");
+                }
+                steerReady = true;
+                lastSteerReadyTime = millis();
+            } else {
+                if (steerReady) {
+                    LOG_WARNING(EventSource::AUTOSTEER, "Valtra steering valve not ready");
+                }
+                steerReady = false;
+            }
+        }
     }
 
     // Check for engage messages
@@ -1086,7 +1150,7 @@ MotorStatus TractorCANDriver::getStatus() const {
         status.actualPWM = targetPWM;
     }
 
-    status.currentDraw = 0.0f;  // No current sensing via CAN
+    status.currentDraw = hasKeyaFunction() ? motorCurrentX32 : 0.0f;
 
     // Only report error if we're enabled and trying to steer but no connection
     status.hasError = enabled && !steerReady;

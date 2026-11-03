@@ -1,4 +1,4 @@
-// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
+﻿// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
 // Firmware_Teensy_AiO-New-Dawn is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 // Firmware_Teensy_AiO-New-Dawn is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
@@ -11,7 +11,6 @@
 #include "HardwareManager.h"  // For KICKOUT_D_PIN and KICKOUT_A_PIN
 #include "EventLogger.h"
 #include "TurnSensorTypes.h"
-#include "KeyaCANDriver.h"
 #include "TractorCANDriver.h"  // For CAN kickout detection
 
 // External global objects
@@ -41,7 +40,10 @@ KickoutMonitor::KickoutMonitor() :
     currentHighStartTime(0),
     kickoutActive(false),
     kickoutReason(NONE),
-    kickoutTime(0) {
+    kickoutTime(0),
+    lastKickoutStateForTelemetry(false),
+    currentFreezeStartTime(0),
+    frozenCurrentReading(0) {
 }
 
 KickoutMonitor::~KickoutMonitor() {
@@ -71,9 +73,17 @@ bool KickoutMonitor::init(MotorDriverInterface* driver) {
     
     // Log which sensors are relevant for this motor type
     if (driver) {
-        if (driver->getType() == MotorDriverType::KEYA_CAN) {
+        bool usesKeyaInternalKickout = (driver->getType() == MotorDriverType::KEYA_CAN);
+        if (driver->getType() == MotorDriverType::TRACTOR_CAN) {
+            TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(driver);
+            usesKeyaInternalKickout = tractorCAN->hasKeyaMotor();
+        }
+
+        if (usesKeyaInternalKickout) {
             LOG_INFO(EventSource::AUTOSTEER, "Keya motor detected - external sensors (encoder/pressure/current) will be ignored");
             LOG_INFO(EventSource::AUTOSTEER, "Keya uses internal slip detection via CAN");
+        } else if (driver->getType() == MotorDriverType::TRACTOR_CAN) {
+            LOG_INFO(EventSource::AUTOSTEER, "Tractor CAN steering detected - CAN-managed kickout path active");
         } else {
             LOG_INFO(EventSource::AUTOSTEER, "PWM/Hydraulic motor - external sensors active if configured");
         }
@@ -94,9 +104,14 @@ void KickoutMonitor::process() {
     
     // Determine motor type for sensor relevance
     MotorDriverType motorType = motorDriver ? motorDriver->getType() : MotorDriverType::NONE;
+    bool isTractorCANKeya = false;
+    if (motorType == MotorDriverType::TRACTOR_CAN) {
+        TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorDriver);
+        isTractorCANKeya = tractorCAN->hasKeyaMotor();
+    }
     bool isKeyaMotor = (motorType == MotorDriverType::KEYA_CAN ||
                        motorType == MotorDriverType::KEYA_SERIAL ||
-                       motorType == MotorDriverType::TRACTOR_CAN);  // TRACTOR_CAN handles its own kickout
+                       isTractorCANKeya);
     
     // Debug motor type and sensor configuration
     static uint32_t lastDebugTime = 0;
@@ -123,26 +138,22 @@ void KickoutMonitor::process() {
         }
     }
     
-    // Only read sensors relevant to the motor type
-    if (!isKeyaMotor) {
-        // Get encoder pulse count from EncoderProcessor (not relevant for Keya)
-        if (encoderProc && encoderProc->isEnabled()) {
-            int32_t newCount = encoderProc->getPulseCount();
-            
-            // Log significant changes in encoder count  
-            static int32_t lastLoggedCount = 0;
-            
-            if (abs(newCount - lastLoggedCount) >= 10) {  // Log every 10 counts
-                uint16_t maxPulses = configMgr->getPulseCountMax();
-                LOG_DEBUG(EventSource::AUTOSTEER, "Encoder count: %d (max: %u)", newCount, maxPulses);
-                lastLoggedCount = newCount;
-            }
-            
-            encoderPulseCount = newCount;
+    // Keep turn-sensor data up to date for PGN250 even when local KEYA kickout is used.
+    if (encoderProc && encoderProc->isEnabled()) {
+        int32_t newCount = encoderProc->getPulseCount();
+
+        static int32_t lastLoggedCount = 0;
+        if (!isKeyaMotor && abs(newCount - lastLoggedCount) >= 10) {
+            uint16_t maxPulses = configMgr->getPulseCountMax();
+            LOG_DEBUG(EventSource::AUTOSTEER, "Encoder count: %d (max: %u)", newCount, maxPulses);
+            lastLoggedCount = newCount;
         }
-        
-        // Get pressure and current readings from ADProcessor (not relevant for Keya)
-        lastPressureReading = (uint16_t)adProcessor->getPressureReading();  // Filtered value (0-255)
+
+        encoderPulseCount = newCount;
+    }
+
+    if (adProcessor) {
+        lastPressureReading = (uint16_t)adProcessor->getPressureReading();
         lastCurrentReading = adProcessor->getMotorCurrent();
     }
     
@@ -220,9 +231,7 @@ void KickoutMonitor::process() {
         else if (isKeyaMotor && checkMotorSlipOverCurrentKickout()) {
             kickoutActive = true;
             // Determine specific reason based on motor type
-            if (motorDriver->getType() == MotorDriverType::KEYA_CAN ||
-                (motorType == MotorDriverType::TRACTOR_CAN &&
-                 static_cast<TractorCANDriver*>(motorDriver)->hasKeyaMotor())) {
+            if (motorDriver->getType() == MotorDriverType::KEYA_CAN || isTractorCANKeya) {
                 kickoutReason = KEYA_SLIP;  // checkMotorSlip handles both slip and errors
             } else {
                 kickoutReason = MOTOR_SLIP;
@@ -233,7 +242,7 @@ void KickoutMonitor::process() {
 
             // Motor already knows about its own slip condition
         }
-        else if (motorType == MotorDriverType::TRACTOR_CAN && checkCANKickout()) {
+        else if (motorType == MotorDriverType::TRACTOR_CAN && !isTractorCANKeya && checkCANKickout()) {
             // Generic CAN kickout detection (via JSON config, e.g., MF V-Bus valve status)
             kickoutActive = true;
             kickoutReason = CAN_KICKOUT;
@@ -287,7 +296,7 @@ void KickoutMonitor::process() {
 
             case CAN_KICKOUT:
                 // CAN kickout clears when protocol engine reports no kickout
-                if (motorType == MotorDriverType::TRACTOR_CAN && checkCANKickout()) {
+                if (motorType == MotorDriverType::TRACTOR_CAN && !isTractorCANKeya && checkCANKickout()) {
                     conditionsNormal = false;
                 }
                 break;
@@ -415,30 +424,15 @@ bool KickoutMonitor::checkMotorSlipOverCurrentKickout() {
     // Check motor type
     MotorDriverType motorType = motorDriver->getType();
 
-    if (motorType == MotorDriverType::KEYA_CAN) {
-        // Cast to KeyaCANDriver to access slip detection
-        KeyaCANDriver* keyaDriver = static_cast<KeyaCANDriver*>(motorDriver);
-        if (keyaDriver->checkMotorSlip()) {
-            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor slip detected");
-            return true;
-        }
-        float current = keyaDriver->getKeyaCurrentX32();      // Get current from Keya x32, as only 1A resolution
-        uint8_t threshold = configMgr->getCurrentThreshold(); // Get threshold from config (0-255, same scale as PGN250)
-        //Serial.print("Keya current: "); Serial.print(current); Serial.print(" Threshold: "); Serial.println(threshold);
-        if (current > threshold) { 
-            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor current (A) %.1f value (Ax32): %.f over threshold %u",
-                        current/32, current, threshold);
-            return true;
-        }
-    }
-    else if (motorType == MotorDriverType::TRACTOR_CAN) {
+    // Standalone KeyaCANDriver (MotorDriverType::KEYA_CAN) is never instantiated;
+    // Keya-on-CAN always runs through TractorCANDriver below.
+    if (motorType == MotorDriverType::TRACTOR_CAN) {
         TractorCANDriver* tractorCAN = static_cast<TractorCANDriver*>(motorDriver);
         if (!tractorCAN->hasKeyaMotor()) {
-            // Valve kickout is handled by checkCANKickout() via JSON config
+            // Non-KEYA tractor CAN kickout is handled by checkCANKickout() via JSON config.
             return false;
         }
 
-        // Keya motor on the tractor CAN driver: same slip and current checks as KEYA_CAN
         if (tractorCAN->checkKeyaMotorSlip()) {
             LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor slip detected");
             return true;
@@ -446,8 +440,8 @@ bool KickoutMonitor::checkMotorSlipOverCurrentKickout() {
         float current = tractorCAN->getKeyaCurrentX32();
         uint8_t threshold = configMgr->getCurrentThreshold();
         if (current > threshold) {
-            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor current (A) %.1f value (Ax32): %.f over threshold %u",
-                        current/32, current, threshold);
+            LOG_WARNING(EventSource::AUTOSTEER, "KICKOUT: Keya motor current (A) %.1f value (Ax32): %.0f over threshold %u",
+                        current / 32.0f, current, threshold);
             return true;
         }
     }
@@ -575,11 +569,22 @@ uint8_t KickoutMonitor::getTurnSensorReading() const {
 
 void KickoutMonitor::sendPGN250() {
     // Update sensor readings right before sending to ensure fresh data
-    bool isKeyaMotor = (motorDriver && motorDriver->getType() == MotorDriverType::KEYA_CAN);
-    if (!isKeyaMotor && adProcessor) {
+    if (adProcessor) {
         lastPressureReading = (uint16_t)adProcessor->getPressureReading();
         lastCurrentReading = adProcessor->getMotorCurrent();
     }
+
+    // Freeze current telemetry at kickout so AgOpenGPS can show the trigger context.
+    if (kickoutActive && !lastKickoutStateForTelemetry) {
+        frozenCurrentReading = lastCurrentReading;
+        currentFreezeStartTime = millis();
+    }
+    lastKickoutStateForTelemetry = kickoutActive;
+
+    bool inPostKickoutWindow = (currentFreezeStartTime != 0) &&
+                               ((uint32_t)(millis() - currentFreezeStartTime) < POST_KICKOUT_TELEMETRY_MS);
+    uint16_t currentForTelemetry = (kickoutActive || inPostKickoutWindow) ?
+                                   frozenCurrentReading : lastCurrentReading;
 
     // PGN 250 - Turn Sensor Data to AgOpenGPS
     // Format per NG-V6: {header, source, pgn, length, sensorValue, 0, 0, 0, 0, 0, 0, 0, checksum}
@@ -600,7 +605,13 @@ void KickoutMonitor::sendPGN250() {
     };
     
     // Get the sensor reading based on active turn sensor type
-    pgn250[5] = getTurnSensorReading();
+    TurnSensorType sensorType = static_cast<TurnSensorType>(configMgr->getTurnSensorType());
+    if (sensorType == TurnSensorType::CURRENT) {
+        float scaledCurrent = (currentForTelemetry * 255.0f) / 1680.0f;
+        pgn250[5] = (uint8_t)min(scaledCurrent, 255.0f);
+    } else {
+        pgn250[5] = getTurnSensorReading();
+    }
     
     // Calculate checksum
     uint8_t checksum = 0;

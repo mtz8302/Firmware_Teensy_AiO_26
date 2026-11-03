@@ -87,7 +87,8 @@
       "capabilities": {
         "V_Bus": ["steering"],
         "K_Bus": ["buttons", "hitch"],
-        "ISO_Bus": []
+        "ISO_Bus": [],
+        "None": ["keya"]
       },
       "uiNotes": "V_Bus steering only - requires continuous valve ready messages",
 

@@ -134,6 +134,26 @@ uint8_t KeyaSerialDriver::calculateChecksum(uint8_t* data, uint8_t length) {
     return sum & 0xFF;
 }
 
+int32_t KeyaSerialDriver::getPositionDelta() {
+    // Only report a delta once we've actually received a valid frame from
+    // the motor. Position field is a 24-bit counter (bytes 1-3 of the
+    // response), so plain 32-bit signed subtraction is safe for the small
+    // deltas expected between successive calls (~50Hz).
+    if (!hasValidResponse) {
+        return 0;
+    }
+
+    if (positionDeltaFirstCall) {
+        positionDeltaFirstCall = false;
+        lastPositionForDelta = motorPosition;
+        return 0;
+    }
+
+    int32_t delta = (int32_t)motorPosition - (int32_t)lastPositionForDelta;
+    lastPositionForDelta = motorPosition;
+    return delta;
+}
+
 MotorStatus KeyaSerialDriver::getStatus() const {
     MotorStatus status;
     status.enabled = enabled;

@@ -39,6 +39,10 @@ private:
     // Slip detection
     bool motorSlipDetected = false;
     uint32_t slipStartTime = 0;
+
+    // Position delta tracking (for Virtual WAS / WheelAngleFusion)
+    uint32_t lastPositionForDelta = 0;
+    bool positionDeltaFirstCall = true;
     
 public:
     KeyaSerialDriver() = default;
@@ -67,6 +71,11 @@ public:
     
     // Motor slip detection
     bool checkMotorSlip();
+
+    // Position feedback (for Virtual WAS / WheelAngleFusion)
+    uint32_t getMotorPosition() const { return motorPosition; }
+    int32_t getPositionDelta() override;
+    bool hasValidPositionData() const { return hasValidResponse; }
     
 private:
     // Internal methods

@@ -87,7 +87,8 @@
       "capabilities": {
         "V_Bus": ["steering"],
         "K_Bus": ["buttons", "hitch"],
-        "ISO_Bus": []
+        "ISO_Bus": [],
+        "None": ["keya"]
       },
       "uiNotes": "K_Bus typically handles buttons and hitch • V_Bus for steering",
 

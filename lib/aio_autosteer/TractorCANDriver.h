@@ -1,4 +1,4 @@
-// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
+﻿// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
 // Firmware_Teensy_AiO-New-Dawn is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 // Firmware_Teensy_AiO-New-Dawn is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
@@ -43,11 +43,13 @@ private:
     void* steerCAN = nullptr;
     void* buttonCAN = nullptr;
     void* hitchCAN = nullptr;
+    void* keyaCAN = nullptr;  // Keya is always on its own physically separate CAN bus
 
     // Track which bus numbers are assigned
     uint8_t steerBusNum = 0;
     uint8_t buttonBusNum = 0;
     uint8_t hitchBusNum = 0;
+    uint8_t keyaBusNum = 0;
 
     // Common state
     bool enabled = false;
@@ -56,6 +58,8 @@ private:
     bool steerReady = false;
     uint32_t lastSteerReadyTime = 0;
     uint32_t lastCommandTime = 0;
+    bool valveDataSeen = false;      // A real WAS-over-CAN message was parsed (steerBusNum), independent of Keya's steerReady
+    uint32_t lastValveDataTime = 0;
 
     // Keya-specific state (used when brand == KEYA)
     float actualRPM = 0.0f;
@@ -154,7 +158,7 @@ public:
     // Motor type identification
     MotorDriverType getType() const override { return MotorDriverType::TRACTOR_CAN; }
     const char* getTypeName() const override;
-    bool hasCurrentSensing() const override { return false; }
+    bool hasCurrentSensing() const override { return hasKeyaFunction(); }
     bool hasPositionFeedback() const override {
         return hasKeyaFunction();
     }
@@ -162,18 +166,33 @@ public:
     // Detection and safety
     bool isDetected() override { return steerReady; }
     void handleKickout(KickoutType type, float value) override;
-    float getCurrentDraw() override { return 0.0f; }
+    float getCurrentDraw() override { return hasKeyaFunction() ? motorCurrentX32 : 0.0f; }
 
     // Keya-specific methods (for compatibility)
     float getActualRPM() const { return actualRPM; }
     float getCommandedRPM() const { return commandedRPM; }
     uint16_t getMotorPosition() const { return motorPosition; }
+    int32_t getPositionDelta() override {
+        static uint16_t lastPosition = 0;
+        static bool firstCall = true;
+        if (!heartbeatValid) {
+            return 0;
+        }
+        if (firstCall) {
+            firstCall = false;
+            lastPosition = motorPosition;
+            return 0;
+        }
+        int32_t delta = (int16_t)(motorPosition - lastPosition);  // 16-bit rollover safe
+        lastPosition = motorPosition;
+        return delta;
+    }
     float getKeyaCurrentX32() const { return motorCurrentX32; }
     bool checkKeyaMotorSlip();
-    bool hasKeyaMotor() const { return hasKeyaFunction(); }
     bool hasRPMFeedback() const {
         return hasKeyaFunction() && heartbeatValid;
     }
+    bool hasKeyaMotor() const { return hasKeyaFunction(); }
 
     // Massey-specific methods
     bool isEngageButtonPressed() const { return engageButtonPressed; }
@@ -202,7 +221,8 @@ public:
     bool checkEngageEvent();
     const char* getEngageLabel() const;
 
-    // CAN curve feedback (for CAN WAS)
+    // CAN curve feedback (for CAN WAS) - a real WAS reported by the tractor over CAN,
+    // independent of Keya (which may be present on its own separate bus as the actuator).
     int16_t getActualCurve() const {
         if (useProtocolEngine) return protocolEngine.getActualCurve();
         return currentCurve;
@@ -230,6 +250,9 @@ public:
     }
     bool isValveDataReceived() const {
         if (useProtocolEngine) return protocolEngine.isValveDataReceived();
+        // When Keya is the actuator, steerReady tracks its heartbeat, not the real WAS feed -
+        // use the dedicated flag (with its own freshness check) instead.
+        if (hasKeyaFunction()) return valveDataSeen && (millis() - lastValveDataTime < 500);
         return steerReady;  // Legacy: steerReady implies data received
     }
     uint32_t getTimeSinceLastValveReady() const {

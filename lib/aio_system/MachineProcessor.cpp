@@ -370,9 +370,9 @@ void MachineProcessor::handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size
         return;
     }
 
-    // Check if onboard section control should respond
+    // Respond only when onboard section control is active.
     if (!instance->isOnboardSectionControlActive()) {
-        // Sleep mode active - don't respond to hello or scan requests
+        // Inactive mode: do not reply to hello or scan requests.
         return;
     }
 
@@ -395,24 +395,50 @@ void MachineProcessor::handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size
         
         uint8_t ip[4];
         configManager.getIPAddress(ip);
-        
-        uint8_t scanReply[] = {
-            0x80, 0x81,                    // Header
-            MACHINE_HELLO_REPLY,           // Source: Machine module (123)
-            0xCB,                          // PGN: 203 Scan reply
-            7,                             // Length
-            ip[0],
-            ip[1],
-            ip[2],
-            ip[3],
-            ip[0],        // Subnet (repeat IP)
-            ip[1],
-            ip[2],
-            0                              // CRC placeholder
-        };
-        
-        calculateAndSetCRC(scanReply, sizeof(scanReply));
-        sendUDPbytes(scanReply, sizeof(scanReply));
+        bool newFormat = PGNProcessor::instance ? PGNProcessor::instance->lastScanWasNewFormat : false;
+
+        if (!newFormat) {
+            // Classic 13-byte PGN 203 for old AgIO compatibility
+            uint8_t scanReply[] = {
+                0x80, 0x81,                    // Header
+                MACHINE_HELLO_REPLY,           // Source: Machine module (123)
+                0xCB,                          // PGN: 203 Scan reply
+                7,                             // Length
+                ip[0],
+                ip[1],
+                ip[2],
+                ip[3],
+                ip[0],        // Subnet (repeat IP)
+                ip[1],
+                ip[2],
+                0                              // CRC placeholder
+            };
+            calculateAndSetCRC(scanReply, sizeof(scanReply));
+            sendUDPbytes(scanReply, sizeof(scanReply));
+            // Also send extended so Bridge/PANDA module tables work with old AgIO
+        }
+        // Extended 149-byte PGN 203 (always sent)
+        {
+            uint8_t reply[149];
+            memset(reply, 0, sizeof(reply));
+            reply[0] = 0x80;
+            reply[1] = 0x81;
+            reply[2] = MACHINE_HELLO_REPLY;  // Source: Machine module (123)
+            reply[3] = 0xCB;                 // PGN 203
+            reply[4] = 143;                  // dataLen
+            reply[5] = ip[0];
+            reply[6] = ip[1];
+            reply[7] = ip[2];
+            reply[8] = ip[3];
+            // bytes 9-15: zeros already
+            strncpy((char*)&reply[16], configManager.getModuleShortname(),   11); reply[27]  = '\0';
+            strncpy((char*)&reply[28], configManager.getModuleLongname(),    19); reply[47]  = '\0';
+            strncpy((char*)&reply[48], configManager.getModuleDescription(), 99); reply[147] = '\0';
+            uint8_t crc = 0;
+            for (int i = 2; i <= 147; i++) crc += reply[i];
+            reply[148] = crc;
+            sendUDPbytes(reply, sizeof(reply));
+        }
         
     }
 }
@@ -865,19 +891,12 @@ void MachineProcessor::loadMachineConfig() {
 }
 
 bool MachineProcessor::isOnboardSectionControlActive() const {
-    // Check if section control sleep mode is enabled
+    // Internal flag is stored as sleep mode.
     if (!configManager.getSectionControlSleepMode()) {
-        return true;  // Sleep mode disabled - always active
+        return true;  // Sleep mode off -> onboard section control active.
     }
 
-    // Sleep mode enabled - check for external section control activity
-    // External SC is detected if we've recently received PGN 239 from a non-zero source
-    // This is a simple heuristic: if PGN 239 comes from external source, we sleep
-    // Note: This could be enhanced to track source IPs or have explicit wake/sleep commands
-
-    // For now, sleep mode with this simple check:
-    // If sleep mode is enabled, we assume external SC may be active
-    // In practice, users would enable this setting when they have external SC
-    return false;  // Sleep when enabled (external SC assumed active)
+    // Current behavior: sleep mode on means onboard section control is inactive.
+    // Future enhancement could detect external SC activity dynamically.
+    return false;
 }
-

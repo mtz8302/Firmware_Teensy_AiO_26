@@ -65,6 +65,13 @@ public:
     virtual float getCurrent() const { return 0.0f; }
     virtual float getPosition() const { return 0.0f; }
     virtual void resetErrors() { }
+
+    // Optional: signed encoder/position delta since the last call, in raw
+    // counts. Used by WheelAngleFusion (Virtual WAS) to derive a steering
+    // angle estimate. Drivers without position feedback should leave the
+    // default (always returns 0). Override in drivers where
+    // hasPositionFeedback() == true.
+    virtual int32_t getPositionDelta() { return 0; }
     
     // Process function for drivers that need regular updates
     virtual void process() { }

@@ -161,23 +161,16 @@ void PWMMotorDriver::setPWM(int16_t pwm) {
         analogWrite(pwm2Pin, 0);
     }
     
-    // Debug output
+    // Debug output - DO NOT call analogRead() here: it resets ADC1 config used by TeensyADC library
+    // which would corrupt WAS reads. Log calculated values only.
     static uint32_t lastDebug = 0;
     if (millis() - lastDebug > 1000) {
         lastDebug = millis();
-        if (hasCurrentSense) {
-            LOG_DEBUG(EventSource::AUTOSTEER, "PWM %s mode: %d -> PWM1=%d, PWM2=%d, Current: %.2fA", 
-                     brakeMode ? "BRAKE" : "COAST",
-                     pwm, 
-                     analogRead(pwm1Pin),
-                     analogRead(pwm2Pin),
-                     getCurrent());
-        } else {
-            LOG_DEBUG(EventSource::AUTOSTEER, "PWM: %d -> PWM1=%d, PWM2=%d", 
-                     pwm, 
-                     pwm < 0 ? pwmValue : 0,
-                     pwm > 0 ? pwmValue : 0);
-        }
+        LOG_DEBUG(EventSource::AUTOSTEER, "PWM %s mode: cmd=%d -> PWM1=%d, PWM2=%d",
+                 brakeMode ? "BRAKE" : "COAST",
+                 pwm,
+                 pwm > 0 ? (int)pwmValue : 0,
+                 pwm < 0 ? (int)pwmValue : 0);
     }
     
     // For PWM motors, actual PWM follows target immediately
