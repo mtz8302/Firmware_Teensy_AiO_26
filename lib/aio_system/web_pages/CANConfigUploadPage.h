@@ -53,6 +53,9 @@ const char CAN_CONFIG_UPLOAD_PAGE[] PROGMEM = R"rawliteral(
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
+            /* CONTRAST (fixed 2026-09-23): light background, so it needs its own
+             * text colour instead of inheriting white from body. */
+            color: #4a3000;
         }
 
         .warning-box strong {

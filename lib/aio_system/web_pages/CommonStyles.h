@@ -17,6 +17,7 @@ body {
     font-family: Arial, sans-serif;
     margin: 20px;
     background-color: #f0f0f0;
+    color-scheme: light; /* stop browsers from auto-inverting the page */
 }
 .container {
     max-width: 800px;
@@ -36,6 +37,7 @@ h2 {
     margin: 10px 0;
     padding: 10px;
     background-color: #e8f5e9;
+    color: #1b2a3a;
     border-radius: 5px;
 }
 .form-group {
@@ -110,6 +112,7 @@ button:hover {
 }
 .info {
     background-color: #e8f5e9;
+    color: #1b2a3a;
     padding: 10px;
     border-radius: 5px;
     margin: 10px 0;

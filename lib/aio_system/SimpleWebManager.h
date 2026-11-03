@@ -18,6 +18,7 @@
 #include "LogWebSocket.h"
 #include "Version.h"
 #include "EEPROMLayout.h"
+#include "ESP32Interface.h"
 
 // Language support
 enum class WebLanguage {
@@ -71,9 +72,11 @@ private:
     void sendAnalogWorkSwitchPage(EthernetClient& client);
     void sendCANConfigPage(EthernetClient& client);
     void sendCANConfigUploadPage(EthernetClient& client);
+    void sendVWASConfigPage(EthernetClient& client);
 
     // API handlers
     void handleApiStatus(EthernetClient& client);
+    void handleApiModules(EthernetClient& client);
     void handleApiRestart(EthernetClient& client);
     void handleEventLoggerConfig(EthernetClient& client, const String& method);
     void handleLogViewerData(EthernetClient& client);
@@ -86,14 +89,47 @@ private:
     void handleCANConfig(EthernetClient& client, const String& method);
     void handleCANInfo(EthernetClient& client);
     void handleCANConfigUpload(EthernetClient& client);
+    void handleVWASStatus(EthernetClient& client);
+    void handleVWASConfig(EthernetClient& client, const String& method);
+    // Antenna geometry of the dual-antenna baseline, two values AgOpenGPS has to agree on:
+    //   meters    = the mechanical antenna spacing (HeadingBridge::Config::physicalBaselineM)
+    //   offsetDeg = the dual-antenna heading offset, the SAME number AgOpenGPS carries
+    //               (HeadingBridge::Config::dualHeadingOffsetDeg)
+    // Own endpoint instead of keys in /api/vwas/config: they are HeadingBridge settings, and
+    // that handler answers 503 when the VWAS is not active, which must not block a heading
+    // setting. GET also reports the reference actually in use, the receiver's solved length
+    // and the safety-net state, so the page can show whether the reference is fixed or learned.
+    void handleBridgeGeometry(EthernetClient& client, const String& method);
+
+    // Test-drive instrumentation: triggers a CSV dump of the HPR heading-health
+    // ring buffer to the USB serial console (see HeadingMonitor.h). Returns the
+    // counters; the CSV itself is streamed by headingMonitor.pumpDump() and is
+    // deliberately NOT part of the HTTP response, because 480 lines would not
+    // fit without blocking the control loop.
+    void handleHeadingDump(EthernetClient& client);
     void handleCANConfigRestore(EthernetClient& client);
     void handleCANConfigStatus(EthernetClient& client);
+
+    // Catch-all proxy handler: forwards unknown paths to WiFi modules via ESP32 UART
+    // Registered as the onNotFound handler in SimpleHTTPServer
+    void handleModuleProxy(EthernetClient& client, const String& path, const String& query);
+
+    // Sticky-module tracking: remembers which module was last accessed through the proxy
+    // so that sub-resources (CSS, JS, images) without a module prefix in
+    // the path are automatically forwarded to the same module.
+    String lastActiveModuleName;     // Clean name of the active module (e.g. "SectionControl")
+    String lastActiveModulePrefix;   // URL prefix of the active module (e.g. "/SectionControl/")
+    uint32_t lastModuleAccessTime;   // Timestamp of last module access (millis)
     
     // UM98x GPS configuration handlers
     void sendUM98xConfigPage(EthernetClient& client);
     void handleUM98xRead(EthernetClient& client);
     void handleUM98xWrite(EthernetClient& client);
-    
+
+    // DNS alias page and API
+    void sendDNSAliasPage(EthernetClient& client);
+    void handleDNSAliasConfig(EthernetClient& client, const String& method);
+
     // Helper to parse POST body
     String readPostBody(EthernetClient& client);
     

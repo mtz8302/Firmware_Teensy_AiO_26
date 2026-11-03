@@ -120,6 +120,17 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             background: white;
         }
 
+        .option-panel {
+            background: white;
+            padding: 12px 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+            display: none;
+        }
+
+        .was-row3{display:flex;gap:8px}.was-opt{flex:1;padding:8px 6px;font-size:12px;font-weight:600;border:2px solid #ccc;border-radius:8px;background:#fff;color:#666;cursor:pointer;transition:.2s}.was-opt.active{border-color:#2980b9;background:#2980b9;color:#fff}.was-hint{font-size:11px;color:#888;margin:6px 2px 0}
+
         .function-pool {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 10px;
@@ -292,13 +303,6 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         .drop-zone.drag-invalid {
             background: #f8d7da;
             border-color: #dc3545;
-            animation: shake 0.5s;
-        }
-
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
         }
 
         .info-box {
@@ -402,23 +406,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             animation: fadeOut 0.3s ease;
         }
 
-        @keyframes slideIn {
-            from {
-                transform: translateX(400px);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes fadeOut {
-            to {
-                opacity: 0;
-                transform: translateX(400px);
-            }
-        }
+        @keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
+        @keyframes fadeOut{to{opacity:0;transform:translateX(400px)}}
     </style>
 </head>
 <body>
@@ -456,6 +445,15 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 <option value="8">Lindner</option>
                 <option value="9">Valtra/Massey Ferguson</option>
             </select>
+        </div>
+
+        <div class="option-panel" id="keyaCanWasPanel">
+            <div class="was-row3" id="wasSourceRow">
+                <button type="button" class="was-opt" data-src="0" onclick="setWasSource(0)">Analog WAS</button>
+                <button type="button" class="was-opt" data-src="1" onclick="setWasSource(1)">CAN-Kurve (Keya)</button>
+                <button type="button" class="was-opt" data-src="2" onclick="setWasSource(2)">Virtuell (Keya-Encoder)</button>
+            </div>
+            <p class="was-hint">"Virtuell" aktiviert beim Speichern automatisch "Enable Virtual WAS (VWAS)".</p>
         </div>
 
         <div class="function-pool">
@@ -555,6 +553,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 2: [],
                 3: []
             },
+            keyaWasSource: 0,
             draggedElement: null,
             draggedFunction: null,
             touchOffset: { x: 0, y: 0 }
@@ -574,7 +573,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons', 'hitch'],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             2: {
@@ -582,7 +582,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons'],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             3: {
@@ -590,7 +591,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons'],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             4: {
@@ -598,7 +600,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons', 'hitch'],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             5: {
@@ -606,7 +609,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons', 'hitch'],
-                    'ISO_Bus': ['steering', 'implement']
+                    'ISO_Bus': ['steering', 'implement'],
+                    'None': ['keya']
                 }
             },
             6: {
@@ -614,7 +618,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons', 'hitch'],
-                    'ISO_Bus': ['steering', 'implement']
+                    'ISO_Bus': ['steering', 'implement'],
+                    'None': ['keya']
                 },
                 allowsKeya: true
             },
@@ -623,7 +628,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': [],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             8: {
@@ -631,7 +637,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': [],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             },
             9: {
@@ -639,7 +646,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 busTypes: {
                     'V_Bus': ['steering'],
                     'K_Bus': ['buttons', 'hitch'],
-                    'ISO_Bus': []
+                    'ISO_Bus': [],
+                    'None': ['keya']
                 }
             }
         };
@@ -779,8 +787,12 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                         state.busAssignments[i] = functions;
                     }
 
+                    state.keyaWasSource = config.keyaWasSource || 0;
+
                     updateFunctionPool();
                     updateAllDropZones();
+                    updateKeyaOptionVisibility();
+                    updateWASSourceUI();
                     updateInfoBox();
                 }
             } catch (error) {
@@ -801,7 +813,8 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 can2Function: functionsToBitfield(state.busAssignments[2]),
                 can3Speed: parseInt(document.getElementById('can3Speed').value),
                 can3Name: parseInt(document.getElementById('can3Name').value),
-                can3Function: functionsToBitfield(state.busAssignments[3])
+                can3Function: functionsToBitfield(state.busAssignments[3]),
+                keyaWasSource: state.keyaWasSource
             };
 
             try {
@@ -847,6 +860,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         function onBrandChange() {
             state.selectedBrand = parseInt(document.getElementById('brandSelect').value);
             updateFunctionPool();
+            updateKeyaOptionVisibility();
             updateInfoBox();
         }
 
@@ -873,6 +887,24 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             }
 
             updateFunctionPool();
+            updateKeyaOptionVisibility();
+        }
+
+        function updateKeyaOptionVisibility() {
+            const hasKeyaAssigned = Object.values(state.busAssignments).some(functions => functions.includes('keya'));
+            const panel = document.getElementById('keyaCanWasPanel');
+            panel.style.display = hasKeyaAssigned ? 'block' : 'none';
+        }
+
+        function setWasSource(src) {
+            state.keyaWasSource = src;
+            updateWASSourceUI();
+        }
+
+        function updateWASSourceUI() {
+            document.querySelectorAll('#wasSourceRow .was-opt').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.src) === state.keyaWasSource);
+            });
         }
 
         // Update function pool based on brand and current assignments
@@ -1132,28 +1164,9 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 }
             }
 
-            // Special rule: steering and keya are mutually exclusive across all buses
-            if (funcKey === 'steering') {
-                // Check if keya is already assigned to any bus
-                for (const [otherBusNum, functions] of Object.entries(state.busAssignments)) {
-                    if (functions.includes('keya')) {
-                        return {
-                            allowed: false,
-                            reason: `Cannot use Steering and Keya Motor together - they are mutually exclusive`
-                        };
-                    }
-                }
-            } else if (funcKey === 'keya') {
-                // Check if steering is already assigned to any bus
-                for (const [otherBusNum, functions] of Object.entries(state.busAssignments)) {
-                    if (functions.includes('steering')) {
-                        return {
-                            allowed: false,
-                            reason: `Cannot use Keya Motor and Steering together - they are mutually exclusive`
-                        };
-                    }
-                }
-            }
+            // Note: Steering and Keya Motor are no longer mutually exclusive - Keya's motor bus
+            // is always separate hardware from any real tractor CAN bus, so a real WAS-over-CAN
+            // feed (Steering function) can coexist with Keya as the actuator on a different bus.
 
             return { allowed: true };
         }
@@ -1164,6 +1177,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 state.busAssignments[busNum].push(funcKey);
                 updateDropZone(busNum);
                 updateFunctionPool();
+                updateKeyaOptionVisibility();
             }
         }
 
@@ -1174,6 +1188,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
                 state.busAssignments[busNum].splice(index, 1);
                 updateDropZone(busNum);
                 updateFunctionPool();
+                updateKeyaOptionVisibility();
             }
         }
 
@@ -1182,6 +1197,7 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
             state.busAssignments[busNum] = [];
             updateDropZone(busNum);
             updateFunctionPool();
+            updateKeyaOptionVisibility();
         }
 
         // Update info box with brand-specific information

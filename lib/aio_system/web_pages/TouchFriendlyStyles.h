@@ -27,6 +27,7 @@ body {
     background-attachment: fixed;
     color: #ffffff;
     -webkit-text-size-adjust: 100%; /* Prevent font scaling in landscape */
+    color-scheme: light; /* stop browsers from auto-inverting light cards */
 }
 
 .container {
@@ -88,10 +89,17 @@ h2 {
     transform: scale(0.98);
 }
 
-/* Status indicators */
+/* Status indicators
+ *
+ * CONTRAST BUG (fixed 2026-09-23, kept): .status had a light background (#ecf0f1)
+ * and no color of its own, so it inherited color:#ffffff from body - white on
+ * light grey is a contrast ratio of 1.15:1, i.e. effectively invisible. The
+ * semantic variants below are unchanged (white on #2ecc71 = 2.2:1 is weak but
+ * readable, and they were not part of the complaint). */
 .status {
     padding: 15px;
     background: #ecf0f1;
+    color: #1b2a3a;
     border-radius: 10px;
     margin: 15px 0;
     font-size: 18px;
@@ -230,6 +238,20 @@ input[type="range"]::-webkit-slider-thumb {
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     margin-bottom: 15px;
     color: #2c3e50;
+}
+
+/* .section is the same idea as .card (used by several pages, e.g. the VWAS page).
+ * CONTRAST (fixed 2026-09-23): pages that declare their own .section with a white
+ * background but no color inherited color:#ffffff from body - white text on a
+ * white card, i.e. invisible headings. Declaring it here (stylesheet loads before
+ * the page's inline block, so a page can still override) makes the pair safe. */
+.section {
+    background: #fff;
+    color: #1b2a3a;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    margin: 12px 0;
 }
 
 /* Responsive tables */

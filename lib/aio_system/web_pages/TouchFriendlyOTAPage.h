@@ -60,6 +60,7 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
             margin-top: 15px;
             padding: 15px;
             background: #e8f5e9;
+            color: #1b5e20;
             border-radius: 8px;
             font-family: monospace;
             word-break: break-all;
@@ -69,6 +70,7 @@ const char TOUCH_FRIENDLY_OTA_PAGE[] PROGMEM = R"rawliteral(
         #feedback {
             font-family: monospace;
             background: #f5f5f5;
+            color: #10202b;
             padding: 15px;
             border-radius: 8px;
             margin: 20px 0;
