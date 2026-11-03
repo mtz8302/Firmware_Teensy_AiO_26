@@ -7,9 +7,19 @@
 #include "ConfigManager.h"
 #include "EventLogger.h"
 #include "EEPROMLayout.h"
+// Schritt 4b (2026-11-02): Nutzlast-Struct des gemeinsamen Fahrzeug-Setup-Blocks.
+// Der Include steht hier, damit die static_asserts im Header beim Bauen wirklich
+// geprueft werden - ein Header, den niemand einbindet, wird nie kompiliert.
+#include "VehicleSetupBlob.h"
+
 
 // Use shared EEPROM version from EEPROMLayout.h
 #define CURRENT_EE_VERSION EEPROM_VERSION
+
+// Schreib-Hook fuer den gemeinsamen Fahrzeug-Setup-Block (Schritt 4b).
+// Definition hier, gesetzt wird er von AutosteerProcessor::begin() - siehe die
+// Begruendung in VehicleSetupBlob.h. nullptr = noch niemand da, der schreiben kann.
+void (*g_vehicleSetupSaveHook)() = nullptr;
 
 // Direct serial logging for early initialization
 #define EARLY_LOG(msg) Serial.print("\r\n[CONFIG] " msg "\r\n")
@@ -266,6 +276,115 @@ void ConfigManager::saveINSConfig()
     EEPROM.put(addr, insConfigByte);
 }
 
+// Heading fall-back (1600-1699). Byte 0 = scale validity marker (0xA5 = the scale
+// below was learned and may be used), bytes 1..4 = float scale, bytes 5..6 = baseline
+// validity marker PAIR (0xA5 0x5A = the antenna spacing below was entered),
+// bytes 7..10 = float antenna spacing in m, bytes 11..12 = offset validity marker PAIR,
+// bytes 13..16 = float dual-antenna heading offset in deg.
+// The marker PAIRS exist because this region was never used before 2026-10-03 - on an
+// existing board it can hold leftovers of an older layout, and one byte would accept those
+// with a 1-in-256 chance.
+void ConfigManager::saveHeadingBridgeConfig()
+{
+    // Schritt 4b (2026-11-02): Der eigene Bridge-Block bei 1600 wird NICHT mehr
+    // geschrieben. Die Werte gehen ueber den Hook in den gemeinsamen
+    // Fahrzeug-Setup-Block (1500-1755): ein Kopf, eine CRC32, eine Reserve.
+    //
+    // loadHeadingBridgeConfig() liest 1600 weiterhin. Der Bereich bleibt als
+    // einmalige Rueckfallquelle stehen, damit ein Board, das vor dem Umbau
+    // dort Werte hatte, sie beim ersten Start nach dem Update noch mitbekommt
+    // (sie werden beim naechsten Speichern in den neuen Block uebernommen).
+    // Geschrieben wird 1600 nie wieder - damit kann der alte Block auch nicht
+    // mehr mit dem neuen auseinanderlaufen.
+    if (g_vehicleSetupSaveHook) {
+        g_vehicleSetupSaveHook();
+    } else {
+        // Kein VWAS in diesem Build, oder der Aufruf kommt aus
+        // ConfigManager::init() (Versionswechsel -> saveAllConfigs), also vor
+        // AutosteerProcessor::begin(). Die Werte stehen im RAM und werden beim
+        // naechsten Speichern mitgenommen; verloren geht nichts.
+        EARLY_LOG("HeadingBridge: save requested before the vehicle-setup writer exists - RAM only");
+    }
+}
+
+
+// --- Fahrzeug-Setup-Block: Bridge-Nutzlast (Schritt 4b, 2026-11-02) -----------
+// Die Feldliste der Bridge steht NUR hier; der Block kennt nur Rohbytes.
+uint16_t ConfigManager::serializeBridgePayload(uint8_t *buf, uint16_t maxLen) const
+{
+    if (buf == nullptr || maxLen < sizeof(BridgePayload)) return 0;
+
+    BridgePayload p{};
+    p.steerScale           = bridgeSteerScale;
+    p.baselineM            = bridgePhysicalBaselineM;
+    p.dualHeadingOffsetDeg = bridgeDualHeadingOffsetDeg;
+    p.antennaPivotM        = bridgeAntennaPivotM;
+    p.validBits = (uint8_t)((bridgeSteerScaleValid           ? BRIDGE_VALID_STEER_SCALE   : 0) |
+                            (bridgePhysicalBaselineMValid    ? BRIDGE_VALID_BASELINE      : 0) |
+                            (bridgeDualHeadingOffsetDegValid ? BRIDGE_VALID_DUAL_HEADING  : 0) |
+                            (bridgeAntennaPivotMValid        ? BRIDGE_VALID_ANTENNA_PIVOT : 0));
+    memcpy(buf, &p, sizeof(p));
+    return (uint16_t)sizeof(p);
+}
+
+bool ConfigManager::deserializeBridgePayload(const uint8_t *buf, uint16_t len)
+{
+    if (buf == nullptr || len != sizeof(BridgePayload)) return false;
+
+    BridgePayload p{};
+    memcpy(&p, buf, sizeof(p));
+
+    // Die Pruefregeln sind ABSICHTLICH dieselben wie in loadHeadingBridgeConfig():
+    // ein gesetztes Gueltigkeits-Bit allein macht noch keinen brauchbaren Wert.
+    // Der CRC schuetzt gegen Bitfehler im Block, nicht gegen Zahlen, die eine
+    // aeltere oder neuere Firmware anders gemeint hat.
+    bridgeSteerScaleValid = (p.validBits & BRIDGE_VALID_STEER_SCALE) &&
+                            (p.steerScale > 0.5f) && (p.steerScale < 2.0f);
+    bridgeSteerScale      = bridgeSteerScaleValid ? p.steerScale : 1.0f;
+
+    const bool baseOk = (p.baselineM == 0.0f) || (p.baselineM >= 0.1f && p.baselineM <= 5.0f);
+    bridgePhysicalBaselineMValid = (p.validBits & BRIDGE_VALID_BASELINE) && baseOk;
+    bridgePhysicalBaselineM      = bridgePhysicalBaselineMValid ? p.baselineM : 0.0f;
+
+    // 0 ist ein erlaubter Offset - hier entscheidet nur das Bit.
+    bridgeDualHeadingOffsetDegValid = (p.validBits & BRIDGE_VALID_DUAL_HEADING) &&
+                                      (p.dualHeadingOffsetDeg >= -180.0f) &&
+                                      (p.dualHeadingOffsetDeg <= 180.0f);
+    bridgeDualHeadingOffsetDeg      = bridgeDualHeadingOffsetDegValid ? p.dualHeadingOffsetDeg : 0.0f;
+
+    const bool pivOk = (p.antennaPivotM >= -3.0f) && (p.antennaPivotM <= 3.0f);
+    bridgeAntennaPivotMValid = (p.validBits & BRIDGE_VALID_ANTENNA_PIVOT) && pivOk;
+    bridgeAntennaPivotM      = bridgeAntennaPivotMValid ? p.antennaPivotM : 0.0f;
+
+    return true;
+}
+
+void ConfigManager::loadHeadingBridgeConfig()
+{
+    // Schritt 4b (2026-11-02): Der Bereich 1600-1699 ist ABGESCHALTET.
+    //
+    // Der gemeinsame Fahrzeug-Setup-Block beginnt bei 1500 und ist bei den
+    // aktuellen Groessen 108 Byte lang (12 Byte Kopf + 96 Byte Nutzlast), endet
+    // also bei 1608 - er liegt damit UEBER der alten Bridge-Adresse. Dort stehen
+    // jetzt die letzten Bytes der Bridge-Nutzlast bzw. deren Null-Auffuellung.
+    //
+    // Wuerde hier weiter gelesen, laese die Firmware ihre EIGENEN Bytes als
+    // Marker-Paar zurueck. Heute sind das zufaellig Nullen (VehicleSetupBlob{}
+    // nullt die Reserve), also "nichts gespeichert" - aber das haengt daran, wie
+    // gross VehicleSetupBlob gerade ist. Ein Feld mehr, und dieselben Bytes
+    // waeren echte Daten: ein Wert > 0.1 m koennte dann als "fester
+    // Antennenabstand" durchgehen. Deshalb nicht "passt schon", sondern aus.
+    //
+    // Folge: die Werte kommen aus dem neuen Block (loadVWASConfig ->
+    // deserializeBridgePayload) oder - wenn dort nichts steht - aus den
+    // Maschinenkonstanten des Builds (HeadingBridge::Config). Das sind die
+    // gemessenen Werte dieser Maschine, der Verlust beim Umstieg ist damit
+    // verkraftbar (Betreiber-Entscheidung 2026-11-02).
+    //
+    // Die Setter bleiben unveraendert; sie schreiben ueber
+    // saveHeadingBridgeConfig() -> g_vehicleSetupSaveHook in den neuen Block.
+}
+
 void ConfigManager::loadINSConfig()
 {
     int addr = INS_CONFIG_ADDR;
@@ -284,10 +403,13 @@ void ConfigManager::loadAllConfigs()
     loadGPSConfig();
     loadMachineConfig();
     loadINSConfig();
+    loadHeadingBridgeConfig();
     loadTurnSensorConfig();
     loadAnalogWorkSwitchConfig();
     loadMiscConfig();
     loadCANSteerConfig(); // Load CAN configuration
+    loadDNSAliasConfig();  // Load user DNS aliases
+    loadModuleIdentConfig(); // Load module identification
 }
 
 void ConfigManager::saveAllConfigs()
@@ -298,10 +420,13 @@ void ConfigManager::saveAllConfigs()
     saveGPSConfig();
     saveMachineConfig();
     saveINSConfig();
+    saveHeadingBridgeConfig();
     saveTurnSensorConfig();
     saveAnalogWorkSwitchConfig();
     saveMiscConfig();
     saveCANSteerConfig(); // Save CAN configuration
+    saveDNSAliasConfig();  // Save user DNS aliases
+    saveModuleIdentConfig(); // Save module identification
 }
 
 void ConfigManager::resetToDefaults()
@@ -319,7 +444,15 @@ void ConfigManager::resetToDefaults()
     pwmBrakeMode = false;      // Default to coast mode
     softStartDurationMs = 500; // Default 500ms enabled (direction change = 250ms auto)
     pulseCountMax = 5;
-    minSpeed = 3;
+    // 0.0 km/h: creep must be allowed. The speed gate is deliberately NOT the
+    // place that stops the tractor at standstill, because PGN 254 quantises
+    // speed to 0.1 km/h (AOG sends (int)(avgSpeed*10.0), i.e. TRUNCATED), so any
+    // non-zero default turns into a hard floor: a genuine 0.09 km/h creep
+    // already arrives as byte 0 and never engages. Standstill is instead
+    // rejected geometrically (net RTK displacement over time) in
+    // WheelAngleFusion, which distinguishes "not moving" from "moving slowly"
+    // without relying on the quantised PGN byte.
+    minSpeed = 0;
     motorDriverConfig = 0x00; // Default to DRV8701 with wheel encoder
 
     // Steer settings defaults
@@ -329,6 +462,8 @@ void ConfigManager::resetToDefaults()
     steerSensorCounts = 30;
     wasOffset = 0;
     ackermanFix = 1.0;
+    pwmFilterAlpha = 90;        // 90% old value, 10% new value
+    pwmMinThresholdPct = 25;    // 25% of minPWM as minimum output threshold
 
     // GPS config defaults
     gpsPassThrough = false;
@@ -339,10 +474,16 @@ void ConfigManager::resetToDefaults()
     raiseTime = 2;
     lowerTime = 4;
     isPinActiveHigh = false;
-    sectionControlSleepMode = false; // Default: onboard SC always active
+    sectionControlSleepMode = false; // Default: onboard section control active
 
     // INS config defaults
     insUseFusion = false;
+    bridgeSteerScale = 1.0f;
+    bridgeSteerScaleValid = false;
+    bridgePhysicalBaselineM = 0.0f;        // 0 = not entered -> learn it from the receiver
+    bridgePhysicalBaselineMValid = false;
+    bridgeDualHeadingOffsetDeg = 0.0f;     // 0 = not entered -> the build default is used
+    bridgeDualHeadingOffsetDegValid = false;
 
     // LED defaults
     ledBrightness = 25; // 25% default brightness
@@ -403,9 +544,22 @@ void ConfigManager::resetToDefaults()
     canSteerConfig.can3Speed = 0;    // 250k
     canSteerConfig.can3Function = 0; // None
     canSteerConfig.moduleID = 0x1C;  // Default Keya module ID
-    canSteerConfig.reserved[0] = 0;
+    canSteerConfig.reserved[0] = 0;  // Keya WAS source: 0=Analog (default), 1=CAN curve, 2=Virtual
 
     eeVersion = CURRENT_EE_VERSION;
+
+    // DNS alias defaults: gps and steer are pre-configured; slots 2 and 3 are empty.
+    // These can be freely changed or cleared on the /dns-alias settings page.
+    strncpy(dnsAlias[0], "gps",   11); dnsAlias[0][11] = '\0';
+    strncpy(dnsAlias[1], "steer", 11); dnsAlias[1][11] = '\0';
+    dnsAlias[2][0] = '\0';
+    dnsAlias[3][0] = '\0';
+
+    // Module identification defaults
+    strncpy(moduleShortname,   "aio",             11); moduleShortname[11]  = '\0';
+    strncpy(moduleLongname,    "Teensy AiO board", 19); moduleLongname[19]   = '\0';
+    strncpy(moduleDescription, "Board with GPS receiver, IMU, motor and CAN driver, sensor inputs, onboard section control", 99);
+    moduleDescription[99] = '\0';
 }
 
 bool ConfigManager::checkVersion()
@@ -537,6 +691,10 @@ void ConfigManager::saveMiscConfig()
     EEPROM.put(addr, buzzerVolume);
     addr += sizeof(buzzerVolume);
     EEPROM.put(addr, jdPWMSensitivity);
+    addr += sizeof(jdPWMSensitivity);
+    EEPROM.put(addr, pwmFilterAlpha);
+    addr += sizeof(pwmFilterAlpha);
+    EEPROM.put(addr, pwmMinThresholdPct);
 }
 
 void ConfigManager::loadMiscConfig()
@@ -550,6 +708,10 @@ void ConfigManager::loadMiscConfig()
     addr += sizeof(buzzerVolume);
 
     EEPROM.get(addr, jdPWMSensitivity);
+    addr += sizeof(jdPWMSensitivity);
+    EEPROM.get(addr, pwmFilterAlpha);
+    addr += sizeof(pwmFilterAlpha);
+    EEPROM.get(addr, pwmMinThresholdPct);
 
     // Validate loaded values
     if (ledBrightness < 5 || ledBrightness > 100)
@@ -563,6 +725,15 @@ void ConfigManager::loadMiscConfig()
     if (jdPWMSensitivity < 1 || jdPWMSensitivity > 10)
     {
         jdPWMSensitivity = 5; // Default
+    }
+    if (pwmFilterAlpha > 97)
+    {
+        // Keep alpha below 1.0 so the filter remains responsive and cannot freeze output.
+        pwmFilterAlpha = 90; // Default: 90% old value
+    }
+    if (pwmMinThresholdPct > 100)
+    {
+        pwmMinThresholdPct = 25; // Default: 25% of minPWM
     }
 
     LOG_INFO(EventSource::CONFIG, "Loaded misc config from EEPROM: LED=%d%%, BuzzerVol=%d, JD_PWM=%d",
@@ -705,6 +876,78 @@ void ConfigManager::loadCANSteerConfig()
     // Load the entire struct
     EEPROM.get(addr, canSteerConfig);
 
+    // Keya WAS source select: 0=Analog, 1=CAN curve, 2=Virtual (fusion). Clamp stale/corrupt values.
+    if (canSteerConfig.reserved[0] > 2) canSteerConfig.reserved[0] = 0;
+
     LOG_INFO(EventSource::CONFIG, "Loaded CAN Steer config - Brand: %d",
              canSteerConfig.brand);
+}
+
+void ConfigManager::saveDNSAliasConfig()
+{
+    int addr = DNS_ALIAS_CONFIG_ADDR;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 12; j++) {
+            EEPROM.put(addr++, dnsAlias[i][j]);
+        }
+    }
+    LOG_DEBUG(EventSource::CONFIG, "Saved DNS aliases: '%s','%s','%s','%s'",
+              dnsAlias[0], dnsAlias[1], dnsAlias[2], dnsAlias[3]);
+}
+
+void ConfigManager::loadDNSAliasConfig()
+{
+    int addr = DNS_ALIAS_CONFIG_ADDR;
+    for (int i = 0; i < 4; i++) {
+        for (int j = 0; j < 12; j++) {
+            EEPROM.get(addr++, dnsAlias[i][j]);
+        }
+        dnsAlias[i][11] = '\0'; // Ensure null termination
+        // Validate: only alphanumeric and hyphen allowed; 0xFF = uninitialized EEPROM
+        for (int j = 0; j < 11; j++) {
+            char c = dnsAlias[i][j];
+            if (c == '\0') break;
+            if (!isalnum((unsigned char)c) && c != '-') {
+                dnsAlias[i][0] = '\0'; // Clear invalid entry
+                break;
+            }
+        }
+    }
+    LOG_DEBUG(EventSource::CONFIG, "Loaded DNS aliases: '%s','%s','%s','%s'",
+              dnsAlias[0], dnsAlias[1], dnsAlias[2], dnsAlias[3]);
+}
+
+void ConfigManager::saveModuleIdentConfig()
+{
+    int addr = MODULE_IDENT_CONFIG_ADDR;
+    for (int j = 0; j < 12;  j++) EEPROM.put(addr++, moduleShortname[j]);
+    for (int j = 0; j < 20;  j++) EEPROM.put(addr++, moduleLongname[j]);
+    for (int j = 0; j < 100; j++) EEPROM.put(addr++, moduleDescription[j]);
+    LOG_DEBUG(EventSource::CONFIG, "Saved module ident: '%s' / '%s'", moduleShortname, moduleLongname);
+}
+
+void ConfigManager::loadModuleIdentConfig()
+{
+    int addr = MODULE_IDENT_CONFIG_ADDR;
+    for (int j = 0; j < 12;  j++) EEPROM.get(addr++, moduleShortname[j]);
+    for (int j = 0; j < 20;  j++) EEPROM.get(addr++, moduleLongname[j]);
+    for (int j = 0; j < 100; j++) EEPROM.get(addr++, moduleDescription[j]);
+    moduleShortname[11]  = '\0';
+    moduleLongname[19]   = '\0';
+    moduleDescription[99] = '\0';
+
+    // Validate shortname: printable ASCII only; 0xFF = uninitialized EEPROM -> use defaults
+    bool valid = (moduleShortname[0] != '\0');
+    for (int j = 0; valid && j < 11 && moduleShortname[j] != '\0'; j++) {
+        if (moduleShortname[j] < 0x20 || moduleShortname[j] > 0x7E) valid = false;
+    }
+    if (!valid) {
+        strncpy(moduleShortname,   "aio",             11); moduleShortname[11]  = '\0';
+        strncpy(moduleLongname,    "Teensy AiO board", 19); moduleLongname[19]   = '\0';
+        strncpy(moduleDescription, "Board with GPS receiver, IMU, motor and CAN driver, sensor inputs, onboard section control", 99);
+        moduleDescription[99] = '\0';
+        LOG_DEBUG(EventSource::CONFIG, "Module ident invalid/uninitialized - using defaults");
+        return;
+    }
+    LOG_DEBUG(EventSource::CONFIG, "Loaded module ident: '%s' / '%s'", moduleShortname, moduleLongname);
 }

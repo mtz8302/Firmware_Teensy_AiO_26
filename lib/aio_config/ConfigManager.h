@@ -50,7 +50,7 @@ struct CANSteerConfig {
     uint8_t can3Name = 0;       // 0=None, 1=V_Bus, 2=K_Bus, 3=ISO_Bus
 
     uint8_t moduleID = 0x1C;    // Module ID for protocols that need it
-    uint8_t reserved[1];        // Future expansion
+    uint8_t reserved[1];        // Keya WAS source: 0=Analog, 1=CAN curve, 2=Virtual (fusion)
 };
 
 class ConfigManager
@@ -81,6 +81,8 @@ private:
     uint8_t steerSensorCounts;
     int16_t wasOffset;
     float ackermanFix;
+    uint8_t pwmFilterAlpha;        // Low-pass filter coefficient (0-97 = 0%-97% old value), default 90
+    uint8_t pwmMinThresholdPct;    // Minimum output threshold as % of minPWM (0-100), default 25
 
     // GPS configuration (EEPROM 400-499)
     bool gpsPassThrough;
@@ -91,10 +93,41 @@ private:
     uint8_t raiseTime;
     uint8_t lowerTime;
     bool isPinActiveHigh;
-    bool sectionControlSleepMode;  // If true, onboard SC goes silent when external SC detected
+    // Internal storage flag: true means onboard section control is inactive (sleep).
+    bool sectionControlSleepMode;
 
     // INS configuration (EEPROM 700-799)
     bool insUseFusion;
+
+    // Heading fall-back (EEPROM 1600-1699)
+    // Learned ratio between the wheel angle AgOpenGPS/VWAS reports and the angle
+    // that actually produces the measured curvature (see HeadingBridge). It is a
+    // machine constant - tyres, steering geometry, load distribution - so it is
+    // measured in the field and stored, exactly like the encoder counts per degree.
+    float bridgeSteerScale;      // 1.0 = trust the VWAS scale
+    bool  bridgeSteerScaleValid; // false = never learned, keep the default
+    // Antenna spacing (m) for the baseline-length plausibility test in HeadingBridge.
+    // 0 = not entered -> the bridge LEARNS the reference from the receiver. That is the
+    // path that failed on 2026-10-03 (a degraded learning window froze the reference at
+    // 0.852 m = +18.3 %, after which the gate rejected 99.7 % of the receiver-clean
+    // frames and never revised it), so an entered value is the intended configuration.
+    // Measured on this machine: 0.711 m over 15 logs / 13 065 RTK-fixed frames.
+    float bridgePhysicalBaselineM;
+    bool  bridgePhysicalBaselineMValid;
+    // Dual-antenna heading offset (deg), Configuration::dualHeadingOffsetDeg of HeadingBridge.
+    // The SAME number AgOpenGPS carries as "dual heading offset" - one value, entered in both
+    // places. 0 is a legitimate value, so only the marker decides whether it was ever set.
+    // Measured on this machine: 88.3 deg (travel - attitude on straight driving, 3 logs,
+    // 520 samples, sd 0.9).
+    float bridgeDualHeadingOffsetDeg;
+    bool  bridgeDualHeadingOffsetDegValid;
+    // B10.51 (2026-10-25): Abstand der Antenne VOR der Vorderachse (m, positiv nach vorn),
+    // aus der AgOpenGPS-vehicle.xml (setVehicle_antennaPivot) oder von Hand eingegeben.
+    // Der Antennenpunkt eilt der Koerperrichtung in der Kurve voraus (atan(omega*d/v)):
+    // die Sehne liefert die Bahnrichtung des Antennenpunkts, nicht die Koerperrichtung,
+    // die AOG will. 0 = Korrektur aus (nicht gesetzt).
+    float bridgeAntennaPivotM;
+    bool  bridgeAntennaPivotMValid;
 
     // LED settings
     uint8_t ledBrightness;
@@ -133,6 +166,17 @@ private:
 
     // CAN Steer configuration
     CANSteerConfig canSteerConfig;
+
+    // DNS alias configuration (EEPROM DNS_ALIAS_CONFIG_ADDR)
+    // Up to 4 user-configurable shortnames (without ".aog") that resolve to the Teensy IP.
+    // Example: "board" → board.aog → 192.168.5.126
+    char dnsAlias[4][12];  // max 11 chars + null terminator each
+
+    // Module identification for extended PGN 203 (EEPROM MODULE_IDENT_CONFIG_ADDR)
+
+    char moduleShortname[12];    // URL base name, e.g. "aio" -> aio.local
+    char moduleLongname[20];     // Display name, e.g. "Teensy AiO board"
+    char moduleDescription[100]; // Free text for web UI
 
     // Initialization tracking
     bool initialized;
@@ -188,6 +232,10 @@ public:
     void setWasOffset(int16_t value) { wasOffset = value; }
     float getAckermanFix() const { return ackermanFix; }
     void setAckermanFix(float value) { ackermanFix = value; }
+    uint8_t getPwmFilterAlpha() const { return pwmFilterAlpha; }
+    void setPwmFilterAlpha(uint8_t value) { pwmFilterAlpha = constrain(value, 0, 97); }
+    uint8_t getPwmMinThresholdPct() const { return pwmMinThresholdPct; }
+    void setPwmMinThresholdPct(uint8_t value) { pwmMinThresholdPct = value; }
 
     // LED configuration
     uint8_t getLEDBrightness() const { return ledBrightness; }
@@ -220,6 +268,54 @@ public:
     // INS configuration methods
     bool getINSUseFusion() const { return insUseFusion; }
     void setINSUseFusion(bool value) { insUseFusion = value; }
+
+    // Heading fall-back: learned wheel-angle scale (see HeadingBridge)
+    float getBridgeSteerScale() const { return bridgeSteerScale; }
+    bool  isBridgeSteerScaleValid() const { return bridgeSteerScaleValid; }
+    void  setBridgeSteerScale(float value, bool valid) {
+        bridgeSteerScale = value;
+        bridgeSteerScaleValid = valid;
+    }
+
+    // Heading fall-back: the mechanically measured antenna spacing (m), see
+    // HeadingBridge::Config::physicalBaselineM. 0 / invalid = learn the reference from
+    // the receiver instead. Stored with its own marker so a blank EEPROM cannot inject a
+    // bogus geometry into the plausibility test.
+    float getBridgePhysicalBaselineM() const { return bridgePhysicalBaselineM; }
+    bool  isBridgePhysicalBaselineValid() const { return bridgePhysicalBaselineMValid; }
+    void  setBridgePhysicalBaselineM(float value, bool valid) {
+        bridgePhysicalBaselineM = value;
+        bridgePhysicalBaselineMValid = valid;
+    }
+
+    // Heading fall-back: the dual-antenna heading offset (deg), see
+    // HeadingBridge::Config::dualHeadingOffsetDeg. The same number AgOpenGPS carries; an
+    // unset value makes HeadingBridge fall back to the built-in default of the build.
+    float getBridgeDualHeadingOffsetDeg() const { return bridgeDualHeadingOffsetDeg; }
+    bool  isBridgeDualHeadingOffsetValid() const { return bridgeDualHeadingOffsetDegValid; }
+    // B10.51: Antennen-Vorlauf (m, aus der AOG-vehicle.xml) - Speichern erledigt die Methode.
+    bool  isBridgeAntennaPivotValid() const { return bridgeAntennaPivotMValid; }
+    float getBridgeAntennaPivotM() const { return bridgeAntennaPivotM; }
+    void  setBridgeAntennaPivotM(float value, bool valid) {
+        bridgeAntennaPivotM = value;
+        bridgeAntennaPivotMValid = valid;
+        saveHeadingBridgeConfig();
+    }
+    void  setBridgeDualHeadingOffsetDeg(float value, bool valid) {
+        bridgeDualHeadingOffsetDeg = value;
+        bridgeDualHeadingOffsetDegValid = valid;
+    }
+
+    // --- Fahrzeug-Setup-Block: Serialisierung der Bridge-Felder (Schritt 4b) ---
+    // Die Feldliste der Bridge steht NUR hier. Der Block kennt nur Rohbytes -
+    // eine zweite Feldliste im Blob wuerde auseinanderlaufen, sobald jemand hier
+    // ein Feld ergaenzt (das ist der Grund, warum die Bridge im Blob eine
+    // Rohregion ist und keine Struktur).
+    // serialize: Rueckgabe = geschriebene Bytes, 0 = Puffer zu klein.
+    // deserialize: false = Laenge passt nicht zum erwarteten Format.
+    uint16_t serializeBridgePayload(uint8_t *buf, uint16_t maxLen) const;
+    bool     deserializeBridgePayload(const uint8_t *buf, uint16_t len);
+
 
     // Turn sensor configuration methods
     uint8_t getTurnSensorType() const { return turnSensorType; }
@@ -276,6 +372,8 @@ public:
     void loadMachineConfig();
     void saveINSConfig();
     void loadINSConfig();
+    void saveHeadingBridgeConfig();
+    void loadHeadingBridgeConfig();
     void saveTurnSensorConfig();
     void loadTurnSensorConfig();
     void saveAnalogWorkSwitchConfig();
@@ -295,6 +393,24 @@ public:
     void setCANSteerConfig(const CANSteerConfig& config);
     void saveCANSteerConfig();
     void loadCANSteerConfig();
+
+    // DNS alias configuration methods
+    const char* getDNSAlias(uint8_t idx) const { return (idx < 4) ? dnsAlias[idx] : ""; }
+    void setDNSAlias(uint8_t idx, const char* value) {
+        if (idx < 4) { strncpy(dnsAlias[idx], value, 11); dnsAlias[idx][11] = 0; }
+    }
+    void saveDNSAliasConfig();
+    void loadDNSAliasConfig();
+
+    // Module identification methods
+    const char* getModuleShortname()    const { return moduleShortname; }
+    const char* getModuleLongname()     const { return moduleLongname; }
+    const char* getModuleDescription()  const { return moduleDescription; }
+    void setModuleShortname(const char* v)   { strncpy(moduleShortname,   v, 11); moduleShortname[11]  = '\0'; }
+    void setModuleLongname(const char* v)    { strncpy(moduleLongname,    v, 19); moduleLongname[19]   = '\0'; }
+    void setModuleDescription(const char* v) { strncpy(moduleDescription, v, 99); moduleDescription[99] = '\0'; }
+    void saveModuleIdentConfig();
+    void loadModuleIdentConfig();
 };
 
 #endif // CONFIGMANAGER_H_
