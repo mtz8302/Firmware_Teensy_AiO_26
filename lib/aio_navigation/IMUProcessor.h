@@ -63,6 +63,10 @@ private:
     bool initTM171();
     void processBNO085Data();
     void processTM171Data();
+    // 1 Hz raw-IMU log line. Declared here, defined FLASHMEM in the .cpp: a 9-argument
+    // Serial.printf costs ~190 bytes of ITCM when it sits inline in processBNO085Data, and ITCM
+    // is the scarce region on this board (MEMORY_BASELINE.md).
+    void logRawImuLine();
 
 public:
     IMUProcessor();

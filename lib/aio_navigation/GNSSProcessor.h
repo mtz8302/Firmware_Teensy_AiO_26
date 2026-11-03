@@ -63,6 +63,37 @@ public:
         float dualHeading;      // degrees
         float dualRoll;         // degrees
         uint8_t headingQuality; // dual GPS solution quality
+        // Baseline length the RECEIVER reports for the master->slave vector.
+        //
+        // This is the receiver-agnostic attitude health indicator the u-blox
+        // F9P integration manual recommends for RELPOSNED: compare the length of
+        // the baseline it solved for with the length that was physically
+        // measured. A degraded solution (multipath, disturbed antenna, blocked
+        // sky view) moves the solved length away from the mechanical one, and
+        // that deviation is visible BEFORE the heading degrades - unlike QF,
+        // which stays at 4/5 through the 1.8...2.9 % garbage frames measured on
+        // the 2026-09-21 test drives.
+        //
+        // Sources:
+        //   * F9P / RELPOSNED  -> UBXParser ubxData.baseRelL (set in
+        //     parseNAVRELPOSNED handling, already parsed today),
+        //   * Unicore UM98x    -> NOT available in $GNHPR (the sentence has no
+        //     length field); it needs UNIHEADINGA (or equivalent) to be enabled
+        //     and parsed. Stays 0 = "unknown" until that exists, and 0 disables
+        //     the check in HeadingBridge on purpose.
+        float baselineLengthM;
+        // ---- UNIHEADINGA (Unicore N4 manual, table 7-169), added 2026-10-01 ------
+        // The receiver's OWN statement about the baseline solution: length, heading,
+        // pitch and the standard deviations of both. Logged only (not used in the
+        // fusion yet) - the scale of hdgstddev has to be compared with the observed
+        // noise on a drive first. `length` is what fills baselineLengthM on a Unicore
+        // receiver, whose $GNHPR has no length field (see the comment above).
+        float uniLengthM = 0.0f;
+        float uniHeadingDeg = 0.0f;
+        float uniPitchDeg = 0.0f;        // baseline elevation = body ROLL (crosswise mount)
+        float uniHdgStdDevDeg = 0.0f;
+        float uniPtchStdDevDeg = 0.0f;
+        bool  uniSolValid = false;       // false while the receiver says INSUFFICIENT_OBS
         
         // INS data (from INSPVAA/INSPVAXA messages)
         float insPitch;         // degrees
@@ -108,6 +139,68 @@ public:
     }
     bool isUDPPassthroughEnabled() const { return udpPassthroughEnabled; }
 
+    // --- HPR heading health ---
+    // Why these exist: "did an HPR sentence arrive at all?" CANNOT be answered
+    // from dualHeading/headingQuality. A receiver that keeps sending the
+    // sentence with a zeroed heading field produces exactly the same downstream
+    // state as a healthy one, and a receiver that stops sending entirely leaves
+    // the last values frozen and looking valid. Counting sentences is the only
+    // way to distinguish a GAP from a BAD VALUE - and those two need completely
+    // different handling. See headingQualityMask in WheelAngleFusion.h.
+    uint32_t getLastHprMillis() const { return lastHprMillis; }
+    uint32_t getHprCount() const { return hprCount; }
+    const char* getLastHprRaw() const { return lastHprRaw; }
+    // Age of the newest HPR sentence; UINT32_MAX until the first one arrives.
+    uint32_t getHprAgeMs() const {
+        return (hprCount > 0) ? (millis() - lastHprMillis) : 0xFFFFFFFFu;
+    }
+
+    // Same instrumentation for the Unicore UNIHEADINGA log (see parseUniHeadingZeroCopy).
+    uint32_t getUniCount() const { return uniCount; }
+    uint32_t getUniAgeMs() const {
+        return (uniCount > 0) ? (millis() - lastUniMillis) : 0xFFFFFFFFu;
+    }
+    // Newest raw UNIHEADINGA line, incl. the leading '#' and the trailing "*crc".
+    // Used by HeadingMonitor exactly like the raw HPR sentence: the only place that
+    // shows whether the receiver went silent or kept talking with INSUFFICIENT_OBS.
+    const char* getLastUniRaw() const { return lastUniRaw; }
+
+    // --- VTG (course over ground) arrival ---
+    // Same reasoning as the HPR counters above, for the OTHER sensor that has to
+    // carry the heading when the attitude goes: the bridge must know whether the
+    // course over ground it is about to trust is a live measurement or a value
+    // that has been sitting in gpsData since the last VTG. The 2026-09-21 logs
+    // show VTG staying valid across every HPR loss (COG within 0.8 deg mean /
+    // 1.9 deg p90 of the position derived direction at 10 m/s), but only if the
+    // sentence actually keeps arriving.
+    uint32_t getLastVtgMillis() const { return lastVtgMillis; }
+    uint32_t getVtgCount() const { return vtgCount; }
+    uint32_t getVtgAgeMs() const {
+        return (vtgCount > 0) ? (millis() - lastVtgMillis) : 0xFFFFFFFFu;
+    }
+
+    // --- Position fix arrival -------------------------------------------------
+    // A THIRD counter, and the reason it is not enough to use gpsData.lastUpdateTime
+    // (found 2026-09-23): several sentences carry the SAME position - GGA and GNS
+    // both set lastUpdateTime to millis(), so that field moves 2...4 times per
+    // satellite epoch and per definition cannot mean "a new fix arrived". Measured
+    // consequence: HeadingBridge::updatePositionWindow() consumed the stamp first
+    // and updateProjection() never saw a new fix - the projection resynchronised
+    // once per drive instead of 10x/s (one interval was 248 m long, giving an 86 m
+    // cross-track residual).
+    // This counter is deduplicated over the GPS time of day (gpsData.fixTime +
+    // fixTimeFractional), which is the same in every sentence of one epoch, so
+    //   * one satellite epoch = exactly one count, no matter how many sentences,
+    //   * it is independent of the receive jitter that sits on millis(),
+    //   * any number of consumers can read it WITHOUT consuming it.
+    uint32_t getPositionCount() const { return positionCount; }
+    uint32_t getPositionAgeMs() const {
+        return (positionCount > 0) ? (millis() - lastPositionMillis) : 0xFFFFFFFFu;
+    }
+    // Called by every parser that carries a position, right after it updated
+    // gpsData. Uses gpsData.fixTime, so no argument is needed.
+    void notePositionFix();
+
 private:
     // NMEA parsing state machine
     enum ParseState
@@ -139,7 +232,8 @@ private:
         MSG_INSPVAA,
         MSG_INSPVAXA,
         MSG_BESTGNSSPOS,
-        MSG_AVR
+        MSG_AVR,
+        MSG_UNIHEADINGA
     };
 
     // Field parsing - zero-copy approach
@@ -167,6 +261,39 @@ private:
     
     // UDP passthrough
     bool udpPassthroughEnabled;
+
+    // --- HPR heading health instrumentation ---
+    // Written by parseHPRZeroCopy() on every recognised HPR sentence. Exposed
+    // through getHprAgeMs()/getHprCount()/getLastHprRaw(); see the note on those
+    // getters for why arrival must be counted separately from the values.
+    uint32_t lastHprMillis = 0;     // millis() of the newest HPR sentence
+    uint32_t hprCount = 0;          // HPR sentences since boot
+    char lastHprRaw[96] = {0};      // newest raw HPR sentence, incl. "$" and "*cs"
+
+    // --- UNIHEADINGA arrival instrumentation (same reasoning as HPR above) ---
+    uint32_t lastUniMillis = 0;
+    uint32_t uniCount = 0;
+    // The raw sentence is the answer to "silent receiver or unusable solution?" and
+    // is only observable at this moment - so keep the newest one (see the header of
+    // parseUniHeadingZeroCopy). 160 B, not the 96 the shorter HPR sentence uses: a
+    // UNIHEADINGA line is ~144 characters up to the CRC32, so 96 would cut off
+    // exactly the two stddev fields this instrument exists for. A still longer line
+    // (more satellites in the sig masks) is truncated at the tail, which is harmless.
+    char lastUniRaw[160] = {0};
+
+    // --- VTG arrival instrumentation ---
+    // Written by parseVTGZeroCopy() on every recognised VTG sentence; see the
+    // getters for why the age of the COG matters to the heading bridge.
+    uint32_t lastVtgMillis = 0;
+    uint32_t vtgCount = 0;
+
+    // --- Position fix arrival instrumentation ---
+    // Written by notePositionFix() from every parser that carries a position; see
+    // the getters for why lastUpdateTime could not be used for this.
+    uint32_t lastPositionMillis = 0;
+    uint32_t positionCount = 0;
+    uint32_t lastFixKey = 0;        // gpsData.fixTime*1000 + ms, for deduplication
+
     
     // Processing control
     bool processingPaused;
@@ -185,6 +312,9 @@ private:
     bool parseGNSZeroCopy();
     bool parseVTGZeroCopy();
     bool parseHPRZeroCopy();
+    // Unicore "#UNIHEADINGA" log (table 7-169): the receiver's own baseline
+    // length/heading/pitch plus their standard deviations. See the implementation.
+    bool parseUniHeadingZeroCopy();
     bool parseKSXT();
     bool parseINSPVAA();
     bool parseINSPVAXA();

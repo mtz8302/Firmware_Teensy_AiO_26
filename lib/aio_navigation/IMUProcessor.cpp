@@ -225,6 +225,24 @@ void IMUProcessor::process()
     }
 }
 
+// 1 Hz raw-IMU log line - called from processBNO085Data() so it shares the "a valid packet
+// arrived" event. FLASHMEM because the 9-argument Serial.printf costs ~190 bytes of ITCM inline.
+// Columns: t_ms, yaw, pitch, roll (the PARSER's degrees), appliedRoll, appliedPitch (what
+// IMUProcessor hands on - they differ while the axis swap is active), swapXY, yawRate.
+// The pitch is in there because "does the pitch swing with the roll" separates a vibration
+// problem from an axis/mounting one. Direct Serial.printf, not LOG_DEBUG: LOG_DEBUG/IMU reaches
+// the log at boot ("Initial data: ...") but the 1 Hz call never appeared in the 20-35 log.
+void FLASHMEM IMUProcessor::logRawImuLine() {
+    if (!bnoParser) return;
+    if (Serial.availableForWrite() < 160) return;   // never wait for the host
+    Serial.printf("IMU,%lu,%.1f,%.1f,%.1f,%.1f,%.1f,%d,%.2f\r\n",
+                  (unsigned long)millis(),
+                  (double)bnoParser->getYaw(), (double)bnoParser->getPitch(),
+                  (double)bnoParser->getRoll(),
+                  (double)currentData.roll, (double)currentData.pitch,
+                  bnoParser->getSwapXY() ? 1 : 0, (double)bnoParser->getYawRate());
+}
+
 void IMUProcessor::processBNO085Data()
 {
     if (!bnoParser)
@@ -247,16 +265,16 @@ void IMUProcessor::processBNO085Data()
         // Update current data
         currentData.heading = bnoParser->getYaw();
 
-        // Apply scaling (x10) and Y-axis swap if configured
+        // Apply Y-axis swap if configured
         // Y-axis swap is needed for some mounting orientations
         if (configManager.getIsUseYAxis()) {
             // Swap pitch and roll axes
-            currentData.pitch = 10.0f * bnoParser->getRoll();
-            currentData.roll = 10.0f * bnoParser->getPitch();
+            currentData.pitch = bnoParser->getRoll();
+            currentData.roll  = bnoParser->getPitch();
         } else {
             // Normal orientation
-            currentData.pitch = 10.0f * bnoParser->getPitch();
-            currentData.roll = 10.0f * bnoParser->getRoll();
+            currentData.pitch = bnoParser->getPitch();
+            currentData.roll  = bnoParser->getRoll();
         }
 
         currentData.yawRate = bnoParser->getYawRate();
@@ -266,6 +284,22 @@ void IMUProcessor::processBNO085Data()
 
         // Update statistics
         timeSinceLastPacket = 0;
+
+        // Raw IMU triple into the LOG, ~1 Hz (operator decision 2026-10-05). Reason: the roll is
+        // only trustworthy at a standstill (measured 3 ... 5 deg standing vs up to 79 deg driving
+        // on the same level ground - see knowledge/imu_roll_units_and_quality_2026-10-05.md), and
+        // "does the PITCH swing with it" (vibration / whole-fusion problem) vs "only the roll"
+        // (axis / mounting) can only be judged from the raw values. Operator: keeps the position
+        // ring clean - this is a sensor diagnostic, not a per-fix quantity, so it is NOT added to
+        // FixSample.
+        // 1 Hz raw-IMU diagnostic - the body lives in logRawImuLine() (FLASHMEM, so the printf
+        // does not land in ITCM). Shares the "valid packet arrived" event.
+        static uint32_t lastImuRawLogMs = 0;
+        const uint32_t nowImuRaw = millis();
+        if ((nowImuRaw - lastImuRawLogMs) >= 1000u) {
+            lastImuRawLogMs = nowImuRaw;
+            logRawImuLine();
+        }
     }
     else if (bnoParser->getTimeSinceLastValid() > 100)
     {

@@ -140,13 +140,43 @@ void BNOAiOParser::parsePacket()
         angVel = 0;
     }
     
-    // Convert to degrees x 10 (original values are in 0.01 degree units)
-    // So divide by 10 to get 0.1 degree units
+    // ---- Units (checked 2026-10-05; MTZ8302's 2026-05-07 fix is the authoritative behaviour)
+    // The three RVC fields do NOT share a unit in this stream:
+    //   yaw   : 0.01 deg  -> scaled by 0.1 here, so yawX10 IS in 0.1 deg units (getYaw() = /10 -> deg)
+    //   pitch : 0.1  deg  -> taken AS IS into pitchX10            (getPitch() = /10 -> deg)
+    //   roll  : 0.1  deg  -> taken AS IS into rollX10             (getRoll()  = /10 -> deg)
+    // getYaw()/getPitch()/getRoll() therefore return DEGREES, and so does every value downstream
+    // (IMUProcessor::currentData.roll/pitch, HeadingBridge::Status.imuRollDeg, the roll channel,
+    // WheelAngleFusion::rollDeg, the roll bins). Only the wire formats need the x10 form, and the
+    // senders convert there: `sendIMUData()` sends `currentData.roll * 10` because AgOpenGPS
+    // multiplies the PGN-211 field by 0.1, while the PANDA field carries whole degrees.
+    // NOTE: the comment that used to stand here claimed the raw values were 0.01 deg for ALL
+    // THREE fields - true for yaw only. That comment is what made a 2026-10-05 attempt "correct"
+    // the pitch/roll scaling (which would have made them 10x too small); it was reverted. If you
+    // ever doubt this, compare a known tilt: the value AOG shows must equal the geometry.
     yawX10 = (int16_t)(rawYaw * 0.1f);
     if (yawX10 < 0) yawX10 += 3600;  // Ensure positive 0-3600 range
     
-    pitchX10 = (int16_t)(rawPitch * 0.1f);
-    rollX10 = (int16_t)(rawRoll * 0.1f);
+   // pitchX10 = (int16_t)(rawPitch * 0.1f);   // NOT needed - the field is already x10 (see above)
+   // rollX10 = (int16_t)(rawRoll * 0.1f);
+    // *** DO NOT "FIX" THIS AGAIN ***
+    // MTZ8302 fixed this on 2026-05-07 and the result is verified on the machines: with the RAW
+    // value here (getPitch()/getRoll() divide by 10) the roll and pitch that reach AgOpenGPS are
+    // CORRECT - the roll has been confirmed in AOG repeatedly on the F9P machine, whose board is
+    // firmly mounted with the axes nearly cleanly aligned (mounting offset <= 5 deg).
+    // Note the two field groups do NOT share a unit in this RVC stream: the yaw above IS scaled
+    // by 0.1, the pitch/roll are not (both are verified correct as they are).
+    //
+    // 2026-10-05: an attempt to "restore" the * 0.1f for pitch/roll - concluding "10x too large"
+    // from the boot line and from the width of the roll spread in the logs - was WRONG and has
+    // been reverted. Two mistakes in that reasoning, both worth remembering:
+    //   * the boot line is the FIRST packet, printed ~10 ms after "Initializing BNO085 RVC mode",
+    //     so the fusion has not converged - it is not a measurement (the values looked
+    //     "impossible", which is exactly what an unconverged first packet looks like);
+    //   * "the route has <= 5 deg of tilt" was used as a terrain bound for a spread measured in a
+    //     column that is not necessarily that angle (axis configuration!).
+    pitchX10 = (int16_t)(rawPitch);//bugfix MTZ8302 2026-05-07
+    rollX10 = (int16_t)(rawRoll);
     
     // Handle axis swap if configured
     if (isSwapXY)
@@ -157,8 +187,16 @@ void BNOAiOParser::parsePacket()
     }
 }
 
-void BNOAiOParser::printDebug()
+// FLASHMEM: called ~1 Hz from IMUProcessor::processBNO085Data() as the raw-IMU log line; it
+// must not add to ITCM, where only a few hundred bytes of padding are left.
+void FLASHMEM BNOAiOParser::printDebug()
 {
-    LOG_DEBUG(EventSource::IMU, "BNO: yaw=%.1f° pitch=%.1f° roll=%.1f° rate=%.1f°/s valid=%d",
-              getYaw(), getPitch(), getRoll(), getYawRate(), isDataValid());
+    // Units (checked 2026-10-05): getYaw/getPitch/getRoll return DEGREES (see the units note in
+    // parsePacket), the get*X10 accessors return the stored 0.1 deg representation. swapXY says
+    // whether the firmware swaps the two tilt axes; operator 2026-10-05: the F9P machine uses
+    // "x", i.e. the swap is OFF, so currentData.roll is this roll.
+    LOG_DEBUG(EventSource::IMU,
+              "BNO: yaw=%.1f pitch=%.1f roll=%.1f rate=%.1f valid=%d swapXY=%d x10=%d/%d/%d",
+              getYaw(), getPitch(), getRoll(), getYawRate(), isDataValid(),
+              isSwapXY ? 1 : 0, getYawX10(), getPitchX10(), getRollX10());
 }

@@ -14,6 +14,20 @@
 #include <string.h>
 #include <math.h>
 
+// ---------------------------------------------------------------------------
+// B10.48 (2026-10-18): 0/0 ist KEINE Position.
+// Der UM982 sendet beim Kaltstart 0/0 (gemessen in allen " 0 "-Logs: 1...2 Frames,
+// in der Halle 25,7 s, immer mit fixQ = 0), der F9P laesst die NMEA-Felder leer.
+// Ohne diese Pruefung wanderten 0/0 in hasPosition, in den NMEA-Cache und damit nach
+// PAOGI/PANDA - AgOpenGPS legt daraus seinen Feld-Ursprung ab (Fehler 5488 km).
+// Bewusst NUR 0/0: die Messung ueber alle 19 Logs zeigt keine Zwischenwerte (der
+// Sprung geht von 0/0 direkt auf die echte Position, sonst < 0,5 km = die Fahrt),
+// Betreiber-Vorgabe 10-18 ("nur 0/0, Fehler < 10 km").
+static inline bool gpsPosValid(double lat, double lon) {
+    return (lat != 0.0) || (lon != 0.0);
+}
+
+
 
 GNSSProcessor::GNSSProcessor() : bufferIndex(0),
                                  state(WAIT_START),
@@ -181,15 +195,10 @@ bool GNSSProcessor::processNMEAChar(char c)
                     checksumIndex++;
                     if (checksumIndex == 8)
                     {
-                        // Complete sentence received
-                        // Find the asterisk position for CRC calculation
-                        int asteriskPos = -1;
-                        for (int i = 0; i < bufferIndex; i++) {
-                            if (parseBuffer[i] == '*') {
-                                asteriskPos = i;
-                                break;
-                            }
-                        }
+                        // Complete sentence received.
+                        // (Der frueher hier berechnete asteriskPos ist entfallen: die
+                        // Pruefsumme macht validateChecksum() weiter unten, der Wert
+                        // wurde nie gelesen.)
                         
                         // Log INSPVAA/INSPVAXA messages for debugging (only occasionally)
                         if (parseBuffer[1] == 'I') {
@@ -456,6 +465,10 @@ bool GNSSProcessor::processMessage()
             processed = parseHPRZeroCopy();  // Use zero-copy version
             break;
             
+        case MSG_UNIHEADINGA:
+            processed = parseUniHeadingZeroCopy();
+            break;
+            
         case MSG_KSXT:
             LOG_DEBUG(EventSource::GNSS, "Processing KSXT message");
             processed = parseKSXT();
@@ -611,7 +624,7 @@ bool GNSSProcessor::parseKSXT()
             ksxtQual = 4; // RTK FIX
 
         gpsData.fixQuality = ksxtQual;
-        gpsData.hasPosition = (ksxtQual > 0);
+        gpsData.hasPosition = (ksxtQual > 0) && gpsPosValid(gpsData.latitude, gpsData.longitude);
         gpsData.isValid = gpsData.hasPosition;
         gpsData.headingQuality = ksxtQual; // Use same quality for heading
     }
@@ -636,6 +649,7 @@ bool GNSSProcessor::parseKSXT()
     gpsData.hasPosition = true;
     gpsData.lastUpdateTime = millis();
     gpsData.messageTypeMask |= (1 << 6);  // Set KSXT bit
+    notePositionFix();
     
     if (enableDebug)
     {
@@ -806,6 +820,12 @@ bool GNSSProcessor::processUBXByte(uint8_t b)
         // Extract dual antenna heading and roll from RELPOSNED
         gpsData.dualHeading = ubxParser->ubxData.baseRelH;
         gpsData.dualRoll = ubxParser->ubxData.baseRelRoll;
+        // Solved baseline length (m, incl. the high-precision part). See the note
+        // on GNSSData::baselineLengthM: comparing it with the mechanically
+        // measured antenna distance is the F9P integration manual's own quality
+        // test for the attitude, and it is the only value-based indicator that
+        // moves BEFORE the heading degrades.
+        gpsData.baselineLengthM = (float)ubxParser->ubxData.baseRelL;
         gpsData.hasDualHeading = true;
         gpsData.headingQuality = (ubxParser->ubxData.carrSoln > 1) ? 4 : 1; // 4=RTK fixed, 1=float
         gpsData.messageTypeMask |= (1 << 3);  // Set RELPOSNED bit
@@ -846,7 +866,6 @@ bool GNSSProcessor::parseINSPVAA()
     if (fieldRefs[12].length > 0)
     {
         gpsData.latitude = parseDoubleZeroCopy(fieldRefs[12]);
-        gpsData.hasPosition = true;
     }
     
     // Field 13: Longitude (degrees)
@@ -854,6 +873,8 @@ bool GNSSProcessor::parseINSPVAA()
     {
         gpsData.longitude = parseDoubleZeroCopy(fieldRefs[13]);
     }
+    // B10.48: erst nach BEIDEN Feldern entscheiden - 0/0 ist keine Position.
+    gpsData.hasPosition = gpsPosValid(gpsData.latitude, gpsData.longitude);
     
     // Cache NMEA format coordinates
     if (gpsData.hasPosition) {
@@ -992,6 +1013,7 @@ bool GNSSProcessor::parseINSPVAA()
     
     // Update the last update time - this is critical!
     gpsData.lastUpdateTime = millis();
+    notePositionFix();
     
     
     return true;
@@ -1236,6 +1258,7 @@ bool GNSSProcessor::parseINSPVAXA()
     
     // Update the last update time
     gpsData.lastUpdateTime = millis();
+    notePositionFix();
     
     // Debug output
     if (enableDebug)
@@ -1366,6 +1389,14 @@ GNSSProcessor::MessageType GNSSProcessor::detectMessageType(const char* msgType)
     // Fast message type detection using character comparison
     // Skip past the talker ID (GP, GN, etc.) if present
     const char* typeStart = msgType;
+
+    // Unicore "#UNIHEADINGA,..." - not an NMEA sentence, so the talker-ID logic
+    // below does not apply. Arrives with the '#' stripped by the receiver parser
+    // in some builds, so accept both spellings.
+    if (typeStart[0] == '#') {
+        typeStart++;
+    }
+    if (strncmp(typeStart, "UNIHEADINGA", 11) == 0) return MSG_UNIHEADINGA;
     
     // Find where the actual message type starts (after talker ID)
     if (strlen(msgType) >= 5) {
@@ -1416,6 +1447,9 @@ GNSSProcessor::MessageType GNSSProcessor::detectMessageType(const char* msgType)
 }
 
 void GNSSProcessor::cacheNMEACoordinates(double lat, double lon) {
+    // B10.48: 0/0 NICHT cachen - sonst sendet PAOGI/PANDA den Nullpunkt als Position
+    // (der Cache haelt dann die LETZTE gueltige Position, wie beim F9P).
+    if (!gpsPosValid(lat, lon)) return;
     // Convert decimal degrees to NMEA format for caching
     
     // Latitude
@@ -1548,6 +1582,29 @@ double GNSSProcessor::parseLongitudeZeroCopy(const FieldRef& lon, const FieldRef
     return result;
 }
 
+// -----------------------------------------------------------------------------
+// Position fix counter (see the getters in GNSSProcessor.h)
+// -----------------------------------------------------------------------------
+// Every sentence that carries a position calls this. The GPS time of day is the
+// same in all sentences of one satellite epoch, so it is the only identifier that
+// turns "sentences arriving" into "fixes arriving". If a sentence has no time at
+// all (fixTime == 0) the count falls back to counting arrivals - a receiver that
+// cannot tell its own epochs apart leaves us no better option, and it is still
+// strictly better than sharing one stamp between several consumers.
+void GNSSProcessor::notePositionFix() {
+    if (gpsData.fixTime != 0) {
+        const uint32_t key = gpsData.fixTime * 1000u +
+                             (uint32_t)(gpsData.fixTimeFractional * 1000.0f + 0.5f);
+        if (key == lastFixKey) {
+            lastPositionMillis = millis();   // same epoch, still a live stream
+            return;
+        }
+        lastFixKey = key;
+    }
+    positionCount++;
+    lastPositionMillis = millis();
+}
+
 bool GNSSProcessor::parseGGAZeroCopy() {
     if (fieldCount < 9)
         return false;
@@ -1592,6 +1649,7 @@ bool GNSSProcessor::parseGGAZeroCopy() {
     gpsData.isValid = gpsData.hasPosition;  // GGA messages need valid flag
     gpsData.lastUpdateTime = millis();
     gpsData.messageTypeMask |= (1 << 0);  // Set GGA bit
+    notePositionFix();
     
     // Check for duplicate position
     if (gpsData.latitude == lastGGALatitude && 
@@ -1675,6 +1733,7 @@ bool GNSSProcessor::parseGNSZeroCopy() {
     gpsData.isValid = gpsData.hasPosition;  // GNS messages need valid flag
     gpsData.lastUpdateTime = millis();
     gpsData.messageTypeMask |= (1 << 1);  // Set GNS bit
+    notePositionFix();
 
     if (enableDebug) {
         logDebug("GNS processed (zero-copy)");
@@ -1686,6 +1745,12 @@ bool GNSSProcessor::parseGNSZeroCopy() {
 bool GNSSProcessor::parseVTGZeroCopy() {
     if (fieldCount < 8)
         return false;
+
+    // Instrumentation: count ARRIVAL, not just the decoded value. The heading
+    // bridge has to decide whether the course over ground is a live measurement
+    // or a stale value left behind by the last VTG - see getVtgAgeMs().
+    lastVtgMillis = millis();
+    vtgCount++;
 
     // Field 1: Track made good (true)
     if (fieldRefs[1].length > 0) {
@@ -1712,48 +1777,177 @@ bool GNSSProcessor::parseVTGZeroCopy() {
     return true;
 }
 
+bool GNSSProcessor::parseUniHeadingZeroCopy() {
+    // UNIHEADINGA (Unicore N4 manual, table 7-169). Unlike the NMEA sentences this
+    // is a Unicore "#" log, so it has a HEADER BEFORE the first ';' and the payload
+    // after it:
+    //   #UNIHEADINGA,<hdr...>;<solstat>,<postype>,<length>,<heading>,<pitch>,
+    //        <reserved>,<hdgstddev>,<ptchstddev>,"<stn id>",<#SVs>,...*<cs><crc>
+    // The manual numbers the header as field 1, so the first payload field (sol
+    // stat) is field 2 and "length" is field 4. The indexes below are
+    // PAYLOAD-relative (0 = sol stat) to keep them readable, and the parser is
+    // standalone instead of using fieldRefs[] because the header's own commas would
+    // shift every index. Values that are 0.0000 with INSUFFICIENT_OBS are still
+    // stored: for the 2026-10-01 heading work the interesting question is whether
+    // the receiver kept SENDING the log while the heading was unusable.
+    lastUniMillis = millis();
+    uniCount++;
+    // Keep the raw line (same idea as the HPR path): the moment a value is lost, the
+    // raw sentence is the only evidence of WHICH field went bad, and it is gone one
+    // tick later.
+    {
+        uint16_t n = bufferIndex;
+        if (n > sizeof(lastUniRaw) - 1) {
+            n = sizeof(lastUniRaw) - 1;
+        }
+        memcpy(lastUniRaw, parseBuffer, n);
+        lastUniRaw[n] = '\0';
+    }
+
+    uint16_t i = 0;
+    while (i < bufferIndex && parseBuffer[i] != ';') i++;
+    if (i >= bufferIndex) return false;          // header only, nothing to decode
+    i++;
+
+    int fieldIndex = 0;
+    while (i < bufferIndex && parseBuffer[i] != '*') {
+        const char* start = parseBuffer + i;
+        const char* stop;
+        if (*start == '"') {
+            // Quoted field (stn id, later the satellite list): skip to the closing
+            // quote so its commas cannot be mistaken for separators.
+            i++;
+            start = parseBuffer + i;
+            while (i < bufferIndex && parseBuffer[i] != '"') i++;
+            stop = parseBuffer + i;
+            if (i < bufferIndex) i++;            // consume the closing quote
+        } else {
+            stop = start;
+            while (i < bufferIndex && parseBuffer[i] != ',' && parseBuffer[i] != '*') i++;
+            stop = parseBuffer + i;
+        }
+
+        FieldRef f;
+        f.start = start;
+        const uint16_t len = (uint16_t)(stop - start);
+        f.length = (uint8_t)(len > 255 ? 255 : len);
+
+        switch (fieldIndex) {
+            case 0:  // sol stat: NONE / INSUFFICIENT_OBS / SOL_COMPUTED / ...
+                gpsData.uniSolValid =
+                    !(f.length >= 6 && strncmp(start, "INSUFF", 6) == 0);
+                break;
+            case 2:  // length (m)
+                gpsData.uniLengthM = parseFloatZeroCopy(f);
+                break;
+            case 3:  // heading: baseline azimuth (deg)
+                gpsData.uniHeadingDeg = parseFloatZeroCopy(f);
+                break;
+            case 4:  // pitch: baseline ELEVATION (deg). Crosswise mount -> body roll.
+                gpsData.uniPitchDeg = parseFloatZeroCopy(f);
+                break;
+            case 6:  // hdgstddev (deg)
+                gpsData.uniHdgStdDevDeg = parseFloatZeroCopy(f);
+                break;
+            case 7:  // ptchstddev (deg)
+                gpsData.uniPtchStdDevDeg = parseFloatZeroCopy(f);
+                break;
+            default:
+                break;
+        }
+
+        fieldIndex++;
+        if (i < bufferIndex && parseBuffer[i] == ',') {
+            i++;
+            continue;
+        }
+        break;                                    // end of line or checksum
+    }
+
+    if (fieldIndex < 8) return false;             // truncated -> leave the data alone
+
+    // The N4 $GNHPR sentence has no length field, so this is the only source for
+    // the baseline length the fusion's plausibility check wants.
+    gpsData.baselineLengthM = gpsData.uniLengthM;
+    return (fieldIndex >= 8);
+}
+
 bool GNSSProcessor::parseHPRZeroCopy() {
-    // HPR format: $GNHPR,time,heading,pitch,roll,quality,satellites,age,reserved*checksum
+    // HPR format (Unicore N4 manual, table 7-38):
+    //   $GNHPR,utc,heading,pitch,roll,QF,sat,diff_age,stn*checksum
+    // The manual numbers fields 1..n starting at the "$--HPR" header, so manual
+    // field ID N lives in fieldRefs[N-1] here (fieldRefs[0] is "$GNHPR" itself).
     // Minimum 8 fields after message type
     if (fieldCount < 8)
         return false;
 
-    // Field 1: Time (HHMMSS.SS format)
+    // Instrumentation: record ARRIVAL, not just the decoded values. A receiver
+    // that keeps emitting the sentence with a zeroed/unusable heading produces
+    // the same downstream state as a healthy one, so the only way to tell a gap
+    // ("no HPR at all") from a bad value ("HPR with QF=0") is to count and
+    // timestamp the sentences themselves. The raw line is kept because the value
+    // that arrives when heading is lost IS the answer to what the UM982 does -
+    // and it is only observable at this exact moment.
+    lastHprMillis = millis();
+    hprCount++;
+    {
+        uint16_t n = bufferIndex;
+        if (n > sizeof(lastHprRaw) - 1) {
+            n = sizeof(lastHprRaw) - 1;
+        }
+        memcpy(lastHprRaw, parseBuffer, n);
+        lastHprRaw[n] = '\0';
+    }
+
+    // Manual field 2 = utc (HHMMSS.SS format)
     if (fieldRefs[1].length > 0) {
         float time = parseFloatZeroCopy(fieldRefs[1]);
         gpsData.fixTime = (uint32_t)time;
         gpsData.fixTimeFractional = time - (uint32_t)time;
     }
 
-    // Field 2: Heading (degrees)
+    // Manual field 3 = heading (degrees, from the dual-antenna baseline)
     if (fieldRefs[2].length > 0) {
         gpsData.dualHeading = parseFloatZeroCopy(fieldRefs[2]);
     }
     
-    // Field 3: Pitch (degrees) - used as roll for AgOpenGPS
+    // Manual field 4 = pitch = the ELEVATION of the master->slave baseline.
+    //
+    // THIS IS THE VEHICLE ROLL, not its pitch, because the two antennas are
+    // mounted LEFT and RIGHT across the vehicle: with the baseline running
+    // athwart, the baseline's elevation angle IS the body roll. Verified on the
+    // machine - AOG's roll display is correct with exactly this mapping. Do not
+    // "fix" this to read field 5 without first checking the antenna mounting.
     if (fieldRefs[3].length > 0) {
-        gpsData.dualRoll = parseFloatZeroCopy(fieldRefs[3]);  // Pitch is used as roll in AOG
+        gpsData.dualRoll = parseFloatZeroCopy(fieldRefs[3]);
     }
 
-    // Field 4: Roll (degrees) - not used by AgOpenGPS
-    // Skip this field
+    // Manual field 5 = roll. With only two antennas the receiver has no
+    // independent roll observability; in the field it reports a constant
+    // 000.0000 here (observed at QF=4), i.e. the UM982 itself treats this field
+    // as unavailable. Deliberately ignored - not an oversight, and NOT the value
+    // AOG needs.
 
-    // Field 5: Heading quality (0=no fix, 1=single, 2=float RTK, 4=RTK fixed)
+    // Manual field 6 = QF, solution quality indicator:
+    //   0=fix invalid, 1=single point, 2=DGPS, 4=RTK fix, 5=RTK float,
+    //   6=dead reckoning, 7=manual/fixed, 8=extra wide lane, 9=SBAS
+    // The scale is NOT ordered by quality - see headingQualityMask in
+    // WheelAngleFusion.h, which whitelists only 4 and 5.
     if (fieldRefs[5].length > 0) {
         gpsData.headingQuality = parseIntZeroCopy(fieldRefs[5]);
     }
 
-    // Field 6: Number of satellites
+    // Manual field 7 = sat (number of satellites)
     if (fieldRefs[6].length > 0) {
         gpsData.numSatellites = parseIntZeroCopy(fieldRefs[6]);
     }
 
-    // Field 7: Age (seconds)
+    // Manual field 8 = diff_age (age of differential data, seconds)
     if (fieldRefs[7].length > 0) {
         gpsData.ageDGPS = (uint16_t)(parseFloatZeroCopy(fieldRefs[7]) * 100); // Convert to centiseconds
     }
 
-    // Field 8: Reserved - skip
+    // Manual field 9 = stn (base station ID) - not consumed by AOG.
 
     // Always set hasDualHeading for HPR messages
     gpsData.hasDualHeading = true;

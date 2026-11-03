@@ -80,6 +80,10 @@ public:
     
     // Configuration
     void setSwapXY(bool swap) { isSwapXY = swap; }
+    // Read-only accessor for the 1 Hz raw IMU log line (IMUProcessor): the swap decides whether
+    // currentData.roll is this roll or this pitch (operator 2026-10-05: the F9P machine uses "x",
+    // i.e. swap off; the UM982 machine in the 20-35 log had it ON).
+    bool getSwapXY() const { return isSwapXY; }
     
     // Debug
     void printDebug();

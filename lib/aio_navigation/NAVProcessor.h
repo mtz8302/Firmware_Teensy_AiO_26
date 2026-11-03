@@ -29,6 +29,10 @@ private:
     // Track when we last sent GPS data to AgIO (for hasGPSDataFlow check)
     uint32_t lastGPSMessageTime;
 
+    // Fix-quality override for PAOGI (HeadingBridge TIMEOUT with the
+    // LAST_VALID_QF0 action). -1 = send the receiver's own value.
+    int paogiFixQualityOverride = -1;
+
     // Latency monitoring
     bool latencyDisplayEnabled;
     uint32_t latencySum;

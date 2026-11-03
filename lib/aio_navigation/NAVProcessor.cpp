@@ -11,6 +11,7 @@
 #include "EventLogger.h"
 #include "ConfigManager.h"
 #include "NMEAMessageBuilder.h"
+#include "HeadingBridge.h"
 
 // External processor instances from main.cpp
 extern GNSSProcessor gnssProcessor;
@@ -134,11 +135,15 @@ float NAVProcessor::convertGPStoUTC(uint16_t gpsWeek, float gpsSeconds) {
 }
 
 bool NAVProcessor::formatPANDAMessage() {
-    if (!gnssProcessor.hasGPS()) {
-        return false;
-    }
 
     const auto& gnssData = gnssProcessor.getData();
+
+    // B10.48 (2026-10-18, Betreiber): 0/0 ist KEINE Position. Der Satz geht trotzdem
+    // raus, aber mit LEEREN Feldern lat/N/lon/E/alt - so legt AgOpenGPS daraus keinen
+    // Feld-Ursprung bei 0/0 an (der Fehler waere 5488 km, gemessen in allen " 0 "-Logs).
+    // Heading/Roll/Tempo bleiben nutzbar, fixQ bleibt der des Empfaengers.
+    const bool posOk = gnssProcessor.hasGPS() &&
+                       (gnssData.latitude != 0.0 || gnssData.longitude != 0.0);
 
     // Use cached NMEA coordinates - no conversion needed
     double latNMEA = gnssData.latitudeNMEA;
@@ -159,6 +164,14 @@ bool NAVProcessor::formatPANDAMessage() {
         snprintf(imuPitch, sizeof(imuPitch), "%d", (int)round(imuData.pitch));
         snprintf(imuYawRate, sizeof(imuYawRate), "%.2f", imuData.yawRate);
     }
+    // NOTE: no dual-antenna fallback for the roll belongs here. selectMessageType()
+    // returns PAOGI whenever hasDualHeading is true, and formatPAOGIMessage() already
+    // takes its roll from gnssData.dualRoll - so this PANDA branch only runs when there
+    // is NO dual heading, and a fallback reading dualRoll from here would be dead code.
+    // The IMU failure on the 2026-09-21 logs therefore does NOT affect the roll that
+    // AgOpenGPS receives. What it does affect is the PITCH (and yaw rate) in PAOGI:
+    // with a dual antenna there is no independent pitch source, so a dead IMU leaves
+    // AgOpenGPS with pitch = 0, disabling its fore/aft antenna swing correction.
 
     // Format time (HHMMSS.S)
     float timeFloat = gnssData.fixTime + gnssData.fixTimeFractional;
@@ -170,13 +183,13 @@ bool NAVProcessor::formatPANDAMessage() {
     builder.addComma();
     builder.addFloat(timeFloat, 1);
     builder.addComma();
-    builder.addLatitude(latNMEA);
+    if (posOk) { builder.addLatitude(latNMEA); }
     builder.addComma();
-    builder.addChar(latDir);
+    if (posOk) { builder.addChar(latDir); }
     builder.addComma();
-    builder.addLongitude(lonNMEA);
+    if (posOk) { builder.addLongitude(lonNMEA); }
     builder.addComma();
-    builder.addChar(lonDir);
+    if (posOk) { builder.addChar(lonDir); }
     builder.addComma();
     builder.addInt(gnssData.fixQuality);
     builder.addComma();
@@ -184,7 +197,7 @@ bool NAVProcessor::formatPANDAMessage() {
     builder.addComma();
     builder.addFloat(gnssData.hdop, 1);
     builder.addComma();
-    builder.addFloat(gnssData.altitude, 3);
+    if (posOk) { builder.addFloat(gnssData.altitude, 3); }
     builder.addComma();
     builder.addFloat((float)gnssData.ageDGPS, 1);
     builder.addComma();
@@ -206,8 +219,78 @@ bool NAVProcessor::formatPANDAMessage() {
 bool NAVProcessor::formatPAOGIMessage() {
     const auto& gnssData = gnssProcessor.getData();
 
+    // B10.48 (2026-10-18, Betreiber): wie in formatPANDAMessage - ohne Position leere
+    // Felder lat/N/lon/E/alt. posOk wird vom Positions-Fallback unten auf true gesetzt.
+    bool posOk = gnssProcessor.hasGPS() &&
+                 (gnssData.latitude != 0.0 || gnssData.longitude != 0.0);
+
     if (!gnssData.hasDualHeading) {
         return false;
+    }
+
+    // ---- Heading/roll fall-back (HeadingBridge) ----------------------------
+    // The bridge works in the RECEIVER's convention (baseline azimuth = body
+    // heading + mount offset), so what it returns here can replace dualHeading
+    // 1:1 - AgOpenGPS adds its own dualHeadingOffset on top of it either way
+    // (UDPComm.Designer.cs:85). Without this substitution a zeroed HPR sentence
+    // (000.0000 with QF=0, measured on every dropout) and the 2-3 % garbage
+    // attitude frames reach AgOpenGPS unchecked.
+    float headingOut = gnssData.dualHeading;
+    float rollOut = gnssData.dualRoll;
+    {
+        const HeadingBridge::Config& bcfg = headingBridge.getConfig();
+        const HeadingBridge::Status& bs = headingBridge.getStatus();
+        if (bcfg.enabled && bcfg.exposeToAog) {
+            if (bs.state == HeadingBridge::State::TIMEOUT) {
+                // Budget spent: the module no longer claims a valid heading.
+                switch (bcfg.timeoutAction) {
+                    case HeadingBridge::TimeoutAction::STOP_PAOGI:
+                        // Send nothing at all - AgOpenGPS' own GPS watchdog takes
+                        // over (it stops steering and reports "no GPS").
+                        return false;
+                    case HeadingBridge::TimeoutAction::LAST_VALID_QF0:
+                        // Keep the position usable but mark the fix quality as
+                        // invalid, which is the only field in PAOGI that tells AOG
+                        // something is wrong. NOTE: AOG also gates section control
+                        // on this - deliberate, it is the honest signal.
+                        headingOut = bs.azimuthDeg;
+                        rollOut = bs.rollDeg;
+                        break;
+                    case HeadingBridge::TimeoutAction::KEEP_BRIDGED:
+                    default:
+                        headingOut = bs.azimuthDeg;
+                        rollOut = bs.rollDeg;
+                        break;
+                }
+            } else if (!bs.haveAnyHeading) {
+                // The filter has never produced a usable heading of ANY kind, so its state is
+                // still the boot default (psi = 0 -> 270 deg for a +90 offset). Forward the
+                // RECEIVER's own values instead of that constant.
+                // Operator decision 2026-09-29: this branch used to key off "a dual-antenna
+                // frame was ever trusted", which kept a single-antenna machine (F9P/UM981 +
+                // IMU, GGA+VTG only) here FOREVER - publishing the receiver's heading/roll,
+                // which are EMPTY without a dual antenna. haveAnyHeading is set by the first
+                // accepted measurement of any source, so such a machine now gets the bridged
+                // heading (and the roll, which the IMU supplies - see updateRoll()).
+                headingOut = gnssData.dualHeading;
+                rollOut = gnssData.dualRoll;
+            } else {
+                headingOut = bs.azimuthDeg;
+                rollOut = bs.rollDeg;
+            }
+        }
+        // Sentinel for the fix-quality override, applied in the builder below.
+        // TWO reasons to report "not valid" to AOG (operator decisions):
+        //   * TIMEOUT + LAST_VALID_QF0, and
+        //   * the heading is model-only for longer than Config::drQf0AfterMs
+        //     ("erst nach 2 s Modellbetrieb qf=0, vorher weiterreichen", 2026-09-28) - a
+        //     heading that no sensor produced must not be claimed as a valid fix.
+        paogiFixQualityOverride =
+            (bcfg.enabled && bcfg.exposeToAog &&
+             ((bs.state == HeadingBridge::State::TIMEOUT &&
+               bcfg.timeoutAction == HeadingBridge::TimeoutAction::LAST_VALID_QF0) ||
+              bs.headingModelOnly))
+            ? 0 : -1;
     }
 
     // Use cached NMEA coordinates - no conversion needed
@@ -215,6 +298,25 @@ bool NAVProcessor::formatPAOGIMessage() {
     double lonNMEA = gnssData.longitudeNMEA;
     char latDir = gnssData.latDir;
     char lonDir = gnssData.lonDir;
+    // Position fall-back (operator request 2026-09-24): while the receiver's fix is
+    // unusable (bridge/trees -> physically impossible step, or fixQuality below RTK
+    // fixed) the forward-projected position is published instead of it. Only the
+    // POSITION is substituted - fix quality, satellite count, speed and heading stay
+    // the receiver's/filter's own, so AgOpenGPS' own lost-RTK handling stays intact and
+    // the module never claims a better fix than there is.
+    {
+        double fbLat = 0.0, fbLon = 0.0;
+        if (headingBridge.getFallbackPosition(fbLat, fbLon)) {
+            posOk = true;   // projizierte Position ist eine gueltige Position
+            char fbLatDir = 'N', fbLonDir = 'E';
+            convertToNMEACoordinates(fbLat, false, latNMEA, fbLatDir);
+            convertToNMEACoordinates(fbLon, true, lonNMEA, fbLonDir);
+            latDir = fbLatDir;
+            lonDir = fbLonDir;
+        }
+    }
+
+
 
     // Get IMU data if available (for pitch and yaw rate)
     int16_t pitch = 0;
@@ -230,7 +332,7 @@ bool NAVProcessor::formatPAOGIMessage() {
     }
 
     // Use dual GPS roll (from KSXT pitch field)
-    float roll = gnssData.dualRoll;
+    float roll = rollOut;
 
     // Format time - use UTC from GPS week/seconds if available
     float timeFloat;
@@ -247,27 +349,32 @@ bool NAVProcessor::formatPAOGIMessage() {
     builder.addComma();
     builder.addFloat(timeFloat, 1);
     builder.addComma();
-    builder.addLatitude(latNMEA);
+    if (posOk) { builder.addLatitude(latNMEA); }
     builder.addComma();
-    builder.addChar(latDir);
+    if (posOk) { builder.addChar(latDir); }
     builder.addComma();
-    builder.addLongitude(lonNMEA);
+    if (posOk) { builder.addLongitude(lonNMEA); }
     builder.addComma();
-    builder.addChar(lonDir);
+    if (posOk) { builder.addChar(lonDir); }
     builder.addComma();
-    builder.addInt(gnssData.fixQuality);
+    builder.addInt(paogiFixQualityOverride >= 0 ? paogiFixQualityOverride
+                                                : (int)gnssData.fixQuality);
     builder.addComma();
     builder.addInt(gnssData.numSatellites);
     builder.addComma();
     builder.addFloat(gnssData.hdop, 1);
     builder.addComma();
-    builder.addFloat(gnssData.altitude, 3);
+    if (posOk) { builder.addFloat(gnssData.altitude, 3); }
     builder.addComma();
     builder.addFloat((float)gnssData.ageDGPS, 1);
     builder.addComma();
-    builder.addFloat(gnssData.speedKnots, 3);
+    // Geschwindigkeit (2026-10-14, Betreiber-Regel): ROH, solange der Empfaengerwert
+    // zu Weg/Zeit passt; im Zweifel (Doppler unplausibel - gemessen 18-47 bis 2,9 m/s
+    // daneben) der geglaettete Wert aus Weg/Zeit. AOG hat einen eigenen Filter, deshalb
+    // bleibt der Normalfall unveraendert.
+    builder.addFloat(headingBridge.getSpeedKnotsForOutput(gnssData.speedKnots), 3);
     builder.addComma();
-    builder.addFloat(gnssData.dualHeading, 1);
+    builder.addFloat(headingOut, 1);
     builder.addComma();
     builder.addFloat(roll, 2);
     builder.addComma();
