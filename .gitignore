@@ -10,3 +10,6 @@ test/
 .fake
 .vscode/extensions.json
 .vscode/settings.json
+# Simulator-Ausgaben (regenerierbar, ~800 kB je Fahrt) - nie committen
+_virt*.txt
+_sim*.log

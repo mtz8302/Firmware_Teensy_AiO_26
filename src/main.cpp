@@ -25,7 +25,6 @@
 #include "CANGlobals.h"
 #include "AutosteerProcessor.h"
 #include "EncoderProcessor.h"
-#include "KeyaCANDriver.h"
 #include "KickoutMonitor.h"
 #include "LEDManagerFSM.h"
 #include "MachineProcessor.h"
@@ -254,7 +253,9 @@ void logPeriodicStatus() {
              gvretServer.hasClient() ? "client connected" : "no client");
 }
 
-void setup()
+// RAM1-Entlastung 2026-10-29: setup() laeuft EINMAL und belegte sonst 2.5 KB ITCM (der Link
+// scheiterte mit -928 Byte). FLASHMEM aendert nur den Ort des Codes, nicht das Verhalten.
+void FLASHMEM setup()
 {
   delay(5000); // delay for time to start monitor
   Serial.begin(115200);
@@ -263,6 +264,19 @@ void setup()
   Serial.print(FIRMWARE_VERSION);
   Serial.print(" ===\r\n");
   Serial.print("Initializing subsystems...");
+  // --- P5 (2026-10-26): Bericht des LETZTEN Absturzes ausgeben -----------------------
+  // Am 10-26 startete das Board bei t = 81,5 s WAEHREND DER FAHRT neu (v = 5,8 m/s) und
+  // meldete nichts - die Ursache war damit nicht bestimmbar (B10.60). Der Teensy-Core
+  // haelt dafuer Fehleradresse, Stack-Zeiger und Rueckverfolgung bereit; die Ausgabe hier
+  // landet im seriellen Mitschnitt und macht den NAECHSTEN Reset lesbar.
+  // Kostet nur Flash, kein Verhalten, keine Aenderung an der Kette.
+  if (CrashReport) {
+    Serial.print("\r\n=== LETZTER ABSTURZ (CrashReport) ===\r\n");
+    Serial.print(CrashReport);
+    Serial.print("=== ENDE ABSTURZBERICHT ===\r\n\r\n");
+  }
+
+
 
   // Initialize ConfigManager FIRST - it has no dependencies
   configManager.init();
@@ -318,6 +332,11 @@ void setup()
   
   // Network stack is ready but don't initialize AsyncUDP yet
   LOG_INFO(EventSource::NETWORK, "Network stack initialized");
+
+  // Built-in QNEthernet mDNS is intentionally disabled here.
+  // A custom mDNS responder is started in QNEthernetUDPHandler so we can
+  // answer multiple *.local names (aio.local, wifi.local, sc.local, ...).
+  LOG_INFO(EventSource::NETWORK, "Built-in mDNS disabled (using custom multi-name mDNS responder)");
   
   // Set CAN bus speeds based on configuration
   CANSteerConfig canConfig = configManager.getCANSteerConfig();
