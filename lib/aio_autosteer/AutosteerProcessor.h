@@ -12,9 +12,6 @@
 class ADProcessor;
 extern ADProcessor adProcessor;
 
-class MotorDriverInterface;
-extern MotorDriverInterface motorDriver;
-
 class KickoutMonitor;
 
 // PGN data is parsed directly to ConfigManager
@@ -33,6 +30,13 @@ private:
     bool autosteerEnabled = false;
     float targetAngle = 0.0f;
     uint32_t lastPGN254Time = 0;
+    // THE wheel angle of this firmware. Selected ONCE per cycle in selectSteerAngle() and
+    // used by every consumer: the PGN 253 towards AgOpenGPS (via actualAngle), the
+    // steering control, the HeadingMonitor record and the HeadingBridge model. See the
+    // note at the definition (operator, 2026-09-28: "es ist die Aufgabe der firmware den
+    // lenkwinkel zu liefern, egal woher" - PAOGI/PANDA never carry a wheel angle, only
+    // the steer PGN does).
+    float   steerAngleOutQuality = 100.0f;  // 0...100: 100 for every physical WAS
     
     // PGN 254 data
     float vehicleSpeed = 0.0f;      // km/h
@@ -54,18 +58,33 @@ private:
     bool guidanceStatusChanged = false;  // Flag for guidance status change
     
     // Motor control
-    float currentAngle = 0.0f;           // Current WAS angle
-    float actualAngle = 0.0f;            // Ackerman-corrected angle
+    float currentAngle = 0.0f;           // THE wheel angle of this cycle (selectSteerAngle)
+    float actualAngle = 0.0f;            // published angle (Ackermann applied in selectSteerAngle)
     int16_t motorPWM = 0;                // Current motor PWM command (-255 to +255)
     
     // Watchdog
     uint32_t lastCommandTime = 0;        // Last time we received PGN 254
     static constexpr uint32_t WATCHDOG_TIMEOUT = 2000; // 2 seconds
+
+    // Steering speed floor (operator requirement 2026-09-21): "the motor must be
+    // free at standstill = autosteer off; we should steer from 120 m/h upwards,
+    // below that not." Deliberately NOT taken from the PGN 254 speed byte: AOG
+    // sends (int)(avgSpeed_kmh * 10.0), i.e. 100 m/h per LSB and TRUNCATED, so
+    // 120 m/h arrives as byte 1 and is read back as 0.1 km/h = 100 m/h - below the
+    // threshold. The floor is simply not representable in that byte, which is why
+    // the gate runs on the GPS speed plus the geometric standstill test.
+    static constexpr float    STEER_MIN_SPEED_MPS     = 0.0333f; // 120 m/h
+    static constexpr uint32_t SPEED_OPEN_DEBOUNCE_MS  = 500;     // rising edge only
+    static constexpr uint32_t SPEED_GRACE_MS          = 2000;    // falling edge
     
     // Kickout
     uint32_t kickoutTime = 0;            // Time of last kickout
     static constexpr uint32_t KICKOUT_COOLDOWN_MS = 2000; // 2 second cooldown
     KickoutMonitor* kickoutMonitor = nullptr;
+    bool lastKickoutStateForTelemetry = false;
+    uint32_t pwmFreezeStartTime = 0;
+    uint8_t frozenPwmDisplay = 0;
+    static constexpr uint32_t POST_KICKOUT_TELEMETRY_MS = 3000;
     
     // Soft-start motor control
     enum class MotorState {
@@ -87,7 +106,8 @@ private:
     uint16_t softStartDurationMs = 500;     // Duration of soft-start ramp (400-1000ms range)
     uint16_t softAccelDurationMs = 250;     // Duration of soft-acceleration ramp (150-500ms range)
     bool useSineRamp = false;                // Use sine curve (true) or linear ramp (false)
-    int16_t lastPwmDrive = 0;                // Previous pwmDrive before ramp and direction inversion
+    int16_t lastPwmDrive = 0;              // Last raw pwmDrive before ramp/inversion, for direction tracking
+    float filteredCommandPwm = 0.0f;       // Global filtered PWM command applied to all motor drivers
     
     // Deferred disarm for AOG OSB handshake
     // When valve/motor not ready, we briefly arm so AOG sees the state change,
@@ -103,8 +123,54 @@ private:
     uint8_t previousMotorConfig = 0xFF;     // Previous motor config byte
     int8_t previousCytronDriver = -1;       // Previous Cytron bit state
     bool motorConfigInitialized = false;    // Track if we've initialized from EEPROM
-    
-    
+
+    // --- Zero-point ownership: "whoever acted last wins" --------------------
+    //
+    // AgOpenGPS re-sends PGN 252 with its stored wasOffset continuously, so the
+    // mere PRESENCE of a value says nothing about whether the operator wants it
+    // applied. What is meaningful is a CHANGE: that is the Zero-WAS button, the
+    // Smart-WAS apply button or the offset slider being moved.
+    //
+    // And "apply it" is only meaningful from a known starting point, because
+    // wasOffset is expressed in ENCODER COUNTS - a value on the same counter that
+    // restarts at every Keya power cycle (see WheelAngleFusion::adoptBootZero()).
+    // A wasOffset that survived in EEPROM across a power cycle therefore cannot be
+    // valid, and applying it together with a freshly acquired mechanical zero is
+    // exactly the double correction seen in the 15-28 logs: AOG had zeroed against
+    // the missing centre (ctr=0) at wasOffset=-206 counts (-11.4 deg), then a
+    // mechanical centre (-281) appeared on top of it and the two added up to
+    // -54.6 deg with the wheels at roughly 15 deg right.
+    //
+    // The rule that removes that failure mode, in both directions:
+    //   * a mechanical zero change (boot zero, GND button, centre capture,
+    //     endstop calibration) invalidates AOG's offset until AOG acts again;
+    //   * an AOG offset change claims the zero for AOG.
+    // Exactly one owner at any time - the same anti-double-integrator argument
+    // that keeps the firmware's own drift compensator disabled.
+    bool    vwasAogZeroActive = false;   // AOG's wasOffset is currently applied
+    bool    vwasAogZeroBaselineSeen = false; // first receipt of this session seen
+    int16_t vwasAogZeroBaseline = 0;     // value from that first receipt
+    uint32_t vwasAogZeroLastChangeMs = 0;
+
+    // --- Nullpunkt: keine Invalidation mehr noetig --------------------------
+    // vwasInvalidateAogZero() ist 2026-11-02 entfallen. Sie existierte, um
+    // AgOpenGPS' wasOffset zu verwerfen, wenn sich der mechanische Nullpunkt
+    // MITTEN in der Sitzung verschiebt (GND-Taster, Zentrum setzen,
+    // Anschlag-Kalibrierung). Alle drei sind entfernt; die einzige verbliebene
+    // Verschiebung ist adoptBootZero() beim Start, und die liegt VOR dem ersten
+    // PGN-252-Empfang: dort merkt sich die Baseline-Logik (process(),
+    // "if (!vwasAogZeroBaselineSeen)") AOGs gespeicherten Wert nur, statt ihn
+    // anzuwenden. vwasAogZeroActive startet false, es gibt also nichts zu
+    // verwerfen.
+
+    // 2026-11-02 entfernt (Betreiber): der GND-Taster am analogen WAS-Eingang
+    // ("Geradeausstellung aus der Kabine") und die zugehoerige Kalibrier-Taste
+    // vwasSetCenterNow(). Damit gibt es im Betrieb keinen Weg mehr, den
+    // Nullpunkt von Hand zu setzen: er kommt aus adoptBootZero() beim Start oder
+    // aus AgOpenGPS' eigenem Zero-WAS (PGN 252 wasOffset), das unveraendert
+    // funktioniert. Auch die dreistufige Anschlag-Kalibrierung ist weg -
+    // countsPerDegree liefert AgOpenGPS.
+
 public:
     // Singleton access
     static AutosteerProcessor* getInstance();
@@ -122,15 +188,53 @@ public:
     
     // Send replies
     void sendHelloReply();
-    void sendScanReply();
+    void sendScanReply(bool extended);
     
     // Send PGN 253 status to AgOpenGPS
     void sendPGN253();
     
     // Motor control
     void updateMotorControl();
+    // Selects THE wheel angle of this firmware - one source of truth per cycle. Called at
+    // the top of process(); every consumer (PGN 253 via actualAngle, steering control,
+    // HeadingMonitor, HeadingBridge) uses currentAngle / steerAngleOutQuality.
+    void selectSteerAngle();
     void emergencyStop();
     bool shouldSteerBeActive() const;
+
+    // --- VWAS config persistence ------------------------------------------------
+    // 2026-11-02: beide schreiben/lesen den GEMEINSAMEN Fahrzeug-Setup-Block
+    // (EEPROM 1500-1755, VehicleSetupBlob = VWAS-Config + centerCounts + Bridge).
+    void saveVehicleSetup();
+    void loadVehicleSetup();
+
+    /// Zustand des Fahrzeug-Setup-Blocks im EEPROM - fuer die Diagnose im Web-IO.
+    ///
+    /// Ohne serielle Konsole gab es bisher keine Moeglichkeit zu sehen, ob der
+    /// Block gueltig ist, verworfen wurde oder nie geschrieben wurde. Genau das
+    /// ist die Frage direkt nach einem Update, und ein Log, das man nicht
+    /// mitgeschnitten hat, beantwortet sie nicht.
+    ///
+    /// Erwartete Werte nach erfolgreichem Schreiben:
+    ///   magic = 42257 (0xA511), layoutVer = 1, payloadLen = 96, crcOk = true.
+    struct VehicleSetupState {
+        uint16_t magic;       ///< Rohwert; 0xFFFF = leer, 0xA511 = unser Block
+        uint16_t layoutVer;   ///< VEHICLE_SETUP_LAYOUT_VER
+        uint16_t payloadLen;  ///< gespeicherte Nutzlast-Laenge
+        uint16_t expectedLen; ///< sizeof(VehicleSetupBlob) dieser Firmware
+        bool crcOk;           ///< Pruefsumme passt zur Nutzlast
+        bool valid;           ///< Kopf passt UND crcOk (was loadVehicleSetup akzeptiert)
+    };
+    VehicleSetupState getVehicleSetupState() const;
+
+    /// Push AgOpenGPS's PGN 252 steering scale and zero offset into the VWAS.
+    ///
+    /// Plan 1: AOG owns countsPerDegree and wasOffset for the VWAS exactly as it
+    /// does for an analog WAS, so the fused angle is computed as
+    /// (encoderCounts - centre + wasOffset) / countsPerDegree. Called from
+    /// process() (change-gated inside the fusion) so the fusion can never run on
+    /// a stale value no matter which path updated ConfigManager.
+    void syncVwasSteerScaling();
     
     // Static callback wrapper for PGN registration
     static void handlePGNStatic(uint8_t pgn, const uint8_t* data, size_t len);
