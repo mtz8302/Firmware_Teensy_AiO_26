@@ -102,9 +102,21 @@ private:
     static constexpr uint8_t DIRECTION_CHANGE_THRESHOLD = 20;  // PWM threshold for direction change detection
     static constexpr float ACCEL_THRESHOLD_RATIO = 0.33f;      // 1/3 of PWM range for acceleration detection
 
+    // Ramp length by speed (operator requirement 2026-11-03): the ramp acts at
+    // motor start, on a direction change and on a hard acceleration step. At
+    // creep speed the GPS/heading noise is larger than the vehicle motion, so the
+    // motor ends up following noise. Therefore the run time is unchanged at and
+    // above RAMP_SLOW_KMH, rises linearly down to RAMP_FULL_KMH and is capped at
+    // RAMP_MAX_FACTOR below that.
+    static constexpr float    RAMP_SLOW_KMH    = 5.0f;   // at/above: unchanged
+    static constexpr float    RAMP_FULL_KMH    = 3.0f;   // at/below: full factor
+    static constexpr float    RAMP_MAX_FACTOR  = 2.0f;   // cap
+    static constexpr uint16_t RAMP_MAX_MS      = 2000;   // hard ceiling on the effective ramp
+
     // Soft-start parameters (configurable via Web UI)
     uint16_t softStartDurationMs = 500;     // Duration of soft-start ramp (400-1000ms range)
     uint16_t softAccelDurationMs = 250;     // Duration of soft-acceleration ramp (150-500ms range)
+    uint16_t rampDurationActiveMs = 500;   // Frozen at ramp entry: base * speed factor
     bool useSineRamp = false;                // Use sine curve (true) or linear ramp (false)
     int16_t lastPwmDrive = 0;              // Last raw pwmDrive before ramp/inversion, for direction tracking
     float filteredCommandPwm = 0.0f;       // Global filtered PWM command applied to all motor drivers

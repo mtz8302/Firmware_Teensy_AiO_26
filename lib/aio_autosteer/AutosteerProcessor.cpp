@@ -1731,15 +1731,38 @@ void AutosteerProcessor::updateMotorControl() {
     // Check if steering should be active
     bool shouldBeActive = shouldSteerBeActive();
     
+    // Ramp length by speed: unchanged at/above RAMP_SLOW_KMH, linearly doubling
+    // down to RAMP_FULL_KMH, capped below that. At creep speed the GPS/heading
+    // noise outweighs the vehicle motion, so a slower build-up stops the motor
+    // from chasing noise. The factor is computed once per cycle and applied at
+    // the moment a ramp starts (inside the transitions below), never while a
+    // ramp is running - otherwise a speed wobble around 3 km/h would jump the
+    // ramp progress.
+    // Speed source is the same one the steering speed gate uses (GPS ring, EMA
+    // smoothed), never the 0.1 km/h-quantised PGN 254 value. A NaN or missing
+    // speed leaves the factor at 1.0, i.e. today's behaviour.
+    // Note: this is a stand-in for the data quality (see 01_ziele.md D6 - filter
+    // by data quality, not by speed); speed is only the proxy for it.
+    const float speedKmhNow = (wheelAngleFusionPtr ? wheelAngleFusionPtr->getSpeedMps()
+                                                  : vehicleSpeed / 3.6f) * 3.6f;
+    float rampFactor = 1.0f;
+    if (speedKmhNow < RAMP_SLOW_KMH) {
+        rampFactor = (speedKmhNow <= RAMP_FULL_KMH)
+                   ? RAMP_MAX_FACTOR
+                   : 1.0f + (RAMP_SLOW_KMH - speedKmhNow) / (RAMP_SLOW_KMH - RAMP_FULL_KMH)
+                            * (RAMP_MAX_FACTOR - 1.0f);
+    }
+
     // Handle state transitions
     if (shouldBeActive && motorState == MotorState::DISABLED) {
         // Transition: Start soft-start sequence
         motorState = MotorState::SOFT_START;
+        rampDurationActiveMs = (uint16_t)(softStartDurationMs * rampFactor);  // speed-scaled, frozen here
         softStartBeginTime = millis();
         softStartRampValue = 0.0f;
         filteredCommandPwm = 0.0f;  // Reset filter so it doesn't start from a stale value
-        LOG_INFO(EventSource::AUTOSTEER, "Motor STARTING - soft-start sequence (%dms)",
-                 softStartDurationMs);
+        LOG_INFO(EventSource::AUTOSTEER, "Motor STARTING - soft-start sequence (%dms, %.1f km/h)",
+                 rampDurationActiveMs, speedKmhNow);
         // Update LED immediately
         ledManagerFSM.transitionSteerState(LEDManagerFSM::STEER_ENGAGED);
         LOG_INFO(EventSource::AUTOSTEER, "LED -> GREEN (motor starting)");
@@ -1842,8 +1865,10 @@ void AutosteerProcessor::updateMotorControl() {
             (abs(lastPwmDrive) < (minPWM + accelThreshold)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_ACCEL;
+            rampDurationActiveMs = (uint16_t)(softAccelDurationMs * rampFactor);  // speed-scaled
             softStartBeginTime = millis();
-            LOG_DEBUG(EventSource::AUTOSTEER, "Hard acceleration detected - entering soft accel mode");
+            LOG_DEBUG(EventSource::AUTOSTEER, "Hard acceleration detected - entering soft accel mode (%dms, %.1f km/h)",
+                      rampDurationActiveMs, speedKmhNow);
         }
 
         // Check for direction change - if so, enter soft-start again
@@ -1852,9 +1877,11 @@ void AutosteerProcessor::updateMotorControl() {
             (abs(pwmDrive) > (minPWM + DIRECTION_CHANGE_THRESHOLD)) &&
             (motorState == MotorState::NORMAL_CONTROL)) {
             motorState = MotorState::SOFT_ACCEL;
+            rampDurationActiveMs = (uint16_t)(softAccelDurationMs * rampFactor);  // speed-scaled
             softStartBeginTime = millis();
             filteredCommandPwm = 0.0f;  // Reset filter on direction change
-            LOG_DEBUG(EventSource::AUTOSTEER, "Direction change detected - entering soft start mode");
+            LOG_DEBUG(EventSource::AUTOSTEER, "Direction change detected - entering soft accel mode (%dms, %.1f km/h)",
+                      rampDurationActiveMs, speedKmhNow);
         }
 
         // Store final PWM value and save raw pwmDrive for next cycle's direction/accel checks
@@ -1881,8 +1908,10 @@ void AutosteerProcessor::updateMotorControl() {
         // Apply soft ramp if active (soft-start or soft-accel)
         if (motorState == MotorState::SOFT_START || motorState == MotorState::SOFT_ACCEL) {
             uint32_t elapsed = millis() - softStartBeginTime;
-            uint16_t durationMs = (motorState == MotorState::SOFT_START) ?
-                                  softStartDurationMs : softAccelDurationMs;
+            // Length was frozen at ramp entry (speed-scaled); clamp it once here so
+            // a future wider config range cannot produce a runaway ramp.
+            uint16_t durationMs = rampDurationActiveMs;
+            if (durationMs > RAMP_MAX_MS) durationMs = RAMP_MAX_MS;
             const char* modeName = (motorState == MotorState::SOFT_START) ?
                                   "Soft-start" : "Soft-accel";
 
