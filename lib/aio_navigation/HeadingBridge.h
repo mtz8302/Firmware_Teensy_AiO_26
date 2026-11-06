@@ -598,6 +598,15 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // 75 Grad Knick = (L/2)/tan(37,5 Grad) = 0,60 m). Beim Schlepper ist v hoeher, damit
     // ist derselbe Deckel dort ebenfalls ausreichend.
     float    holdMinTurnRadiusM = 0.60f;
+    // --- 2026-11-06: Knickwinkel aus (Kurs - Lage) schaetzen --------------------------
+    // Fuer Maschinen OHNE Lenkwinkel-Sensor (Knicklenker-Testmaeher): gamma = 2*atan((L/2)*
+    // tan(cog - (att+Offset)) / d). Ergebnis geht als gamma/2 aufs Heading und als gamma in die
+    // PGN 253, damit AgOpenGPS die Maschine richtig knickt (Darstellung + Section Control).
+    bool     artEstFromCourse = true;
+    float    artEstAntennaLeadM = 0.41f;   // Antennenmitte vor der Vorderachse
+    float    artEstMaxDeg = 78.0f;         // Plausibilitaetsband (Maschine: 75)
+    float    artEstTauS = 0.60f;           // Tiefpass (dt-korrekt), fuer ruhige Darstellung
+    float    artEstMaxRateDegS = 100.0f;   // physikalische Aenderungsrate des Knickgelenks
     // --- 2026-10-18: Quellen-Bestaetigung (Heading) und Roll-Reinigung --------------
     // Betreiber: "1 s Uebergang zwischen den Quellen ist ok, aber zuerst sicher sein,
     // dass die neuen Daten stimmen - die ersten Werte nach Rueckkehr vom Empfang sind
@@ -1821,6 +1830,10 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     }
     State getState() const { return status.state; }
     const Status& getStatus() const { return status; }
+    // 2026-11-06: gefilterter Knickwinkel (Grad, + = rechts) fuer die PGN 253.
+    // AOG halbiert ihn selbst (CVehicle.cs: modelSteerAngle = 0.5 * actualSteerAngleDegrees).
+    float getArticulationEstimateDeg() const;
+    bool  hasArticulationEstimate() const;
 
     Config& getConfig() { return config; }
     const Config& getConfig() const { return config; }

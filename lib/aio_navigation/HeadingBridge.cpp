@@ -141,6 +141,12 @@ static float   s_pcDevDeg  = 0.0f;   // Abweichung, die das Sprungtor gemessen h
 static float   s_pcDevLim  = 0.0f;   // ... und seine Grenze
 static float   s_antLeadDeg = 0.0f;  // angewandter Antennen-Vorlauf (Stufe 1)
 static float   s_artHalfDeg = 0.0f;  // angewandte Knick-Korrektur gamma/2 (Stufe 2)
+// 2026-11-06: gefilterter Knickwinkel aus (Kurs - Lage-Offset), dateiweit - die Getter fuer die
+// PGN-253-Ausgabe lesen ihn. AOG knickt die Maschine damit (CVehicle.cs: 0.5 * Winkel).
+static float   s_artEstDeg   = 0.0f;
+static bool    s_artEstValid = false;
+float HeadingBridge::getArticulationEstimateDeg() const { return s_artEstDeg; }
+bool  HeadingBridge::hasArticulationEstimate()    const { return s_artEstValid; }
 // B10.54 (2026-10-25): ROHE Modellrate (vor dem P1b-Gate). Spalten-Audit: NICHT redundant -
 // 'yr' ist die GEGATETE Rate (0, wenn unterdrueckt), 'opp_yr' deckt nur den Fall "gegen die
 // Lage" ab, und die Formel braucht config.steerScale UND sideHillGainDegPerDeg (0,12 mit
@@ -210,7 +216,10 @@ HeadingBridge::LogExtra HeadingBridge::logExtra() {
 // B10.61 (2026-10-26): harte Obergrenze der AUSGABE-Rate (Notbremse, siehe update()).
 // Bewusst groesser als jede physikalische Drehrate des Fahrzeugs, damit echte Wenden
 // nicht gebremst werden - sie faengt nur Artefakte wie die gemessenen 331 Grad/s.
-static constexpr float kOutHardRateDegS = 60.0f;
+static constexpr float kOutHardRateDegS = 200.0f;   // 2026-11-06: war 60. Notbremse gegen
+// Artefakte (gemessen 331 Grad/s), NICHT die Formung - die macht die Physik-Grenze. 60 Grad/s
+// konnte eine 75-Grad-Wende eines Knicklenkers (bis ~150 Grad/s) nicht durchlassen; 200 liegt
+// ueber jeder realen Drehrate und faengt weiterhin Spruenge.
 
 static inline float wrap180(float a) {
     while (a > 180.0f)  a -= 360.0f;
@@ -2924,12 +2933,65 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     }
     float attRateDegS = 0.0f;
     bool  attRateValid = false;
-    if (config.holdRateFromAttitude && d.hasDualHeading && lastDualHdgValid && !attJumped && (dtS > 0.01f)) {
-        const float r = wrap180(d.dualHeading - lastDualHdgDeg) / dtS;
-        if (fabsf(r) <= HB_ATT_RATE_MAX_DEG_S) { attRateDegS = r; attRateValid = true; }
+    // 2026-11-06: Rate ueber die ZEIT SEIT DER LETZTEN AENDERUNG, nicht ueber die
+    // Aufrufperiode. Die Lagprobe kommt mit der Empfaengerrate (5/10/20 Hz), der Aufruf kann
+    // schneller sein - dann waere dieselbe Probe mehrfach gezaehlt und die Rate zu gross.
+    static float    s_attRateDegS = 0.0f;
+    static uint32_t s_attRateMs   = 0u;
+    static uint32_t lastDualHdgMs = 0u;
+    if (config.holdRateFromAttitude && d.hasDualHeading) {
+        const float delta = wrap180(d.dualHeading - lastDualHdgDeg);
+        const uint32_t dtMs = now - lastDualHdgMs;
+        if ((fabsf(delta) > 0.01f) && (dtMs >= 5u)) {
+            const float r = delta * 1000.0f / (float)dtMs;
+            if (fabsf(r) <= HB_ATT_RATE_MAX_DEG_S) { s_attRateDegS = r; s_attRateMs = now; }
+            lastDualHdgDeg = d.dualHeading;
+            lastDualHdgMs  = now;
+        }
+        // Der Wert gilt als Rate, solange die letzte Aenderung nicht zu alt ist.
+        if ((s_attRateMs != 0u) && ((uint32_t)(now - s_attRateMs) <= 400u)) {
+            attRateDegS = s_attRateDegS;
+            attRateValid = true;
+        }
     }
-    lastDualHdgDeg = d.dualHeading;
     lastDualHdgValid = d.hasDualHeading;
+
+    // --- 2026-11-06: KNICKWINKEL AUS (Kurs - Lage) --------------------------------------
+    // Fuer einen Punkt d vor der Vorderachse auf dem Vorderrahmen gilt rein geometrisch
+    //     tan(att - cog) = d * tan(gamma/2) / (L/2)
+    // umgestellt:  gamma = 2 * atan( (L/2) * tan(beta) / d )  mit beta = cog - (att + Offset)
+    // Beide Groessen sind direkte Messungen (VTG-Kurs + Dual-Lage), es wird NICHT differenziert.
+    // Damit bekommt die Kette ihren fehlenden Eingang, ohne dass ein Lenkwinkel-Sensor noetig
+    // ist. Vorzeichen: gamma > 0 = nach RECHTS geknickt (so erwartet es AOG).
+    float artEstDeg   = 0.0f;
+    bool  artEstValid = false;
+    if (config.artEstFromCourse && hbIsArticulated() && d.hasDualHeading &&
+        (speedMps > 0.5f) && (d.fixQuality >= 2)) {
+        const float beta  = wrap180(d.headingTrue - (d.dualHeading + config.dualHeadingOffsetDeg));
+        const float halfL = 0.5f * hbWheelbaseM(2.5f);
+        const float dM    = config.artEstAntennaLeadM;
+        if ((dM > 0.05f) && (fabsf(beta) < 80.0f)) {
+            const float g = 2.0f * atanf((halfL * tanf(beta * 0.0174532925f)) / dM) * 57.2957795f;
+            if (fabsf(g) <= config.artEstMaxDeg) {
+                // dt-korrekter Tiefpass + physikalische Ratenbegrenzung: roh schwankt gamma um
+                // +-10 Grad (2 Grad beta-Rauschen wird bei gamma=0 mit Faktor ~2,2 verstaerkt).
+                // Fuer die AOG-Darstellung zaehlt: kein Zappeln, keine Spruenge.
+                if (!s_artEstValid) {
+                    s_artEstDeg = g;
+                } else {
+                    const float a = (dtS > 0.0f) ? (dtS / (config.artEstTauS + dtS)) : 0.2f;
+                    const float maxStep = config.artEstMaxRateDegS * ((dtS > 0.0f) ? dtS : 0.1f);
+                    const float delta = (g - s_artEstDeg) * a;
+                    const float lim   = (delta > maxStep) ? maxStep : ((delta < -maxStep) ? -maxStep : delta);
+                    s_artEstDeg += lim;
+                }
+                s_artEstValid = true;
+                artEstDeg   = s_artEstDeg;
+                artEstValid = true;
+            }
+        }
+    }
+    if ((speedMps <= 0.5f) || !d.hasDualHeading) { s_artEstValid = false; }
 
     // 1a+1e (2026-10-10): Traeger-Kette statt psi. Lage (plausibel) -> FAHRTRICHTUNG aus den
     // POSITIONEN (status.travelWitnessDeg/travelWitnessValid = 1a, positionabgeleitet und damit
@@ -2959,8 +3021,18 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // sonst ist sie Rauschen), in Fahrt (v > 0.1) und NICHT rueckwaerts (das Modell rechnet
     // mit |v|, dort waere das Vorzeichen falsch). Sonst bleibt es beim HALTEN.
     const bool keinKurs = (!status.pathChordValid && !status.travelWitnessValid);
+    // 2026-11-06: EIGENER Integrator fuer das HALTEN. Vorher wurde `holdAz` jeden Frame aus
+    // `status.azimuthDeg` neu gesetzt - das ist die bereits BEGRENZTE Ausgabe. Weil der
+    // Halte-Zweig nicht in jedem Frame laeuft (die Zustaende flattern LIVE>BRIDGE>LIVE... und
+    // die Quellenbestaetigung haelt die Ausgabe auf 3), wurde der aufintegrierte Weg immer
+    // wieder verworfen: gemessen 2,7 Grad/s Ausgabe gegen 42 Grad/s echte Drehung (94 % weg).
+    static float  s_holdAzInt   = 0.0f;
+    static bool   s_holdAzValid = false;
     float holdAz = status.azimuthDeg;
-    if (!lageFuehrt && keinKurs) {
+    if (!lageFuehrt) {
+        // Neu aufgezogen wird nur, wenn die VORIGE Ausgabe aus einer echten Quelle kam
+        // (Lage/Ring/Witness) - dann startet der Halt sprungfrei von der Ausgabe.
+        if (!s_holdAzValid || (status.azSrc != 3u)) { s_holdAzInt = status.azimuthDeg; s_holdAzValid = true; }
         // BEWUSST ohne !status.yawRateZeroed: bei Schleichfahrt ist die Qualitaet immer 0
         // (der VWAS urteilt erst ab 0,8 m/s), die Rate aber physikalisch klein. Der
         // BETRAG ist die Sicherung (holdRateMaxDegS), nicht das Qualitaetsurteil.
@@ -2975,8 +3047,11 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                             ? (speedMps / config.holdMinTurnRadiusM * 57.29578f + 10.0f)
                             : config.holdRateMaxDegS;
         if (!status.reverseDirection && (speedMps > 0.1f) && (fabsf(rateHold) <= rateCap)) {
-            holdAz = wrap360(holdAz + rateHold * dtS);
+            s_holdAzInt = wrap360(s_holdAzInt + rateHold * dtS);
         }
+        holdAz = s_holdAzInt;
+    } else {
+        s_holdAzValid = false;   // naechster Halt beginnt wieder von der aktuellen Ausgabe
     }
     // --- 1-s-BESTAETIGUNG der Quelle (2026-10-18, Betreiber) -------------------------
     // Kandidat wie bisher; uebernommen wird er erst, wenn er sourceConfirmMs lang
@@ -3009,8 +3084,11 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // B10.51: Beim Knicklenker messen die Antennen den VORDERRAHMEN; AOG erwartet die
         // Mittelachse -> gamma/2 abziehen. gamma kommt aus dem GELENKWINKEL (echter Sensor
         // direkt; beim virtuellen Keya-Weg der gelernte Encoder-Winkel des VWAS).
-        s_artHalfDeg = hbArticulationHalfDeg(lastWheelAngleDeg);
-        azUse = wrap360(d.dualHeading - s_artHalfDeg); azHave = true;
+        s_artHalfDeg = artEstValid ? (0.5f * artEstDeg) : hbArticulationHalfDeg(lastWheelAngleDeg);
+        // Vorzeichen (2026-11-06): AOG zeichnet das VORDERteil bei "heading - gamma/2"
+        // (CVehicle.cs), die Mittelachse liegt also bei att + gamma/2. Mit einem Minus stand
+        // die Ausgabe um gamma (bis 75 Grad) daneben - das war der Schraeglauf.
+        azUse = wrap360(d.dualHeading + s_artHalfDeg); azHave = true;
     } else if ((use == 1u) && status.pathChordValid) {
         azUse = wrap360(status.pathChordDeg - config.dualHeadingOffsetDeg); azHave = true;
     } else if ((use == 2u) && status.travelWitnessValid) {

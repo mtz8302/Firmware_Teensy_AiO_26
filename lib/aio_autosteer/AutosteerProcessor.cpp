@@ -1669,7 +1669,15 @@ void AutosteerProcessor::sendPGN253() {
     //          checksum}
     
     // Get actual values - use actualAngle which includes Ackerman correction
-    int16_t actualSteerAngle = (int16_t)(actualAngle * 100.0f);  // Actual angle * 100
+    // 2026-11-06: Ohne Lenkwinkel-Messung (Knicklenker-Testmaeher) geht der GESCHAETZTE
+    // Knickwinkel raus - AgOpenGPS knickt die Maschine damit (Darstellung + Section Coverage)
+    // und halbiert ihn selbst (CVehicle.cs: modelSteerAngle = 0.5 * actualSteerAngleDegrees).
+    // Mit echtem Sensor bleibt alles wie bisher (Qualitaet > 0).
+    float angleForAog = actualAngle;
+    if ((steerAngleOutQuality <= 0.0f) && headingBridge.hasArticulationEstimate()) {
+        angleForAog = headingBridge.getArticulationEstimateDeg();
+    }
+    int16_t actualSteerAngle = (int16_t)(angleForAog * 100.0f);  // Actual angle * 100
     int16_t heading = 0;            // Deprecated - sent by GNSS
     int16_t roll = 0;               // Deprecated - sent by GNSS  
     uint8_t livePwmDisplay = (uint8_t)abs(motorPWM);  // Already in 0-255 range
