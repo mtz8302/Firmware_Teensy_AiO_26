@@ -94,6 +94,12 @@ static inline float hbArticulationHalfDeg(float jointAngleDeg) {
     return hbIsArticulated() ? (0.5f * jointAngleDeg) : 0.0f;
 }
 
+// L1 (2026-11-06): Obergrenze fuer die gemessene Lagrate, die im HALTEN weitergefuehrt
+// wird. 250 Grad/s liegt ueber allem, was eine Landmaschine physikalisch dreht (der
+// Testmaeher schafft bei 1 m/s und R_min 0,6 m rund 95 Grad/s) und unter dem, was ein
+// Falter der Dual-Lage erzeugt - Sprünge faengt ohnehin das kinematische Tor (attJumped).
+static constexpr float HB_ATT_RATE_MAX_DEG_S = 250.0f;
+
 // ---------------------------------------------------------------------------
 // B10.53 (2026-10-25): DIE SEHNENLAENGE FOLGT DER GESCHWINDIGKEIT
 // ---------------------------------------------------------------------------
@@ -2892,6 +2898,18 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // mit A+B2 direkt publiziert. Ein Sprung ueber der physikalisch moeglichen Rate => verwerfen.
     static float lastAttGateDeg = 0.0f;
     static bool  lastAttGateValid = false;
+
+    // --- L1 (2026-11-06): GEMESSENE Lagrate fuer das HALTEN -----------------------------
+    // Der Schleichfahrt-Fix unten fuehrt die Ausgabe im HALTEN mit der MODELLrate weiter.
+    // Fuer eine Maschine ohne Lenkwinkel-Messung ist die Modellrate aber ~0 (der Knickwinkel
+    // fehlt im Modell) - die Ausgabe fror ein, waehrend die Karosserie drehte. Messung
+    // 2026-11-06 (Knicklenker-Testmaeher, RTK, Lage sauber): 50...180 Grad Fehler in der
+    // Wende, 44 % der Kurven-Frames standen auf "halten".
+    // Die Drehrate der Dual-Antenne IST eine Messung und schlaegt den Zustand - dieselbe
+    // Hierarchie wie im ganzen Modul. Sie wird verworfen, wenn sie ein Sprung ist
+    // (attJumped) oder unplausibel gross.
+    static float lastDualHdgDeg = 0.0f;
+    static bool  lastDualHdgValid = false;
     bool attJumped = false;
     if (d.hasDualHeading && lastAttGateValid) {
         const float jumpDeg = fabsf(wrap180(d.dualHeading - lastAttGateDeg));
@@ -2904,6 +2922,15 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         lastAttGateValid = true;
         // + Toleranz: Lage jittert 2-6 Grad/Frame
     }
+    float attRateDegS = 0.0f;
+    bool  attRateValid = false;
+    if (config.holdRateFromAttitude && d.hasDualHeading && lastDualHdgValid && !attJumped && (dtS > 0.01f)) {
+        const float r = wrap180(d.dualHeading - lastDualHdgDeg) / dtS;
+        if (fabsf(r) <= HB_ATT_RATE_MAX_DEG_S) { attRateDegS = r; attRateValid = true; }
+    }
+    lastDualHdgDeg = d.dualHeading;
+    lastDualHdgValid = d.hasDualHeading;
+
     // 1a+1e (2026-10-10): Traeger-Kette statt psi. Lage (plausibel) -> FAHRTRICHTUNG aus den
     // POSITIONEN (status.travelWitnessDeg/travelWitnessValid = 1a, positionabgeleitet und damit
     // unabhaengig von der Dual-Lage) -> psi nur, wenn je eine Messung akzeptiert wurde
@@ -2937,9 +2964,17 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // BEWUSST ohne !status.yawRateZeroed: bei Schleichfahrt ist die Qualitaet immer 0
         // (der VWAS urteilt erst ab 0,8 m/s), die Rate aber physikalisch klein. Der
         // BETRAG ist die Sicherung (holdRateMaxDegS), nicht das Qualitaetsurteil.
-        const float rateHold = modelRateRawDegS;
-        if (!status.reverseDirection && (speedMps > 0.1f) &&
-            (fabsf(rateHold) <= config.holdRateMaxDegS)) {
+        const float rateModel = modelRateRawDegS;
+        const float rateHold  = attRateValid ? attRateDegS : rateModel;
+        // L1 (2026-11-06): Obergrenze PHYSIKALISCH - keine Maschine dreht schneller als
+        // v / R_min. (Testmaeher: R_min 0,6 m -> bei 1 m/s sind das 95 Grad/s; der alte
+        // Deckel holdRateMaxDegS = 3 Grad/s haette das Weiterfuehren sofort gesperrt und
+        // genau damit die Ausgabe in der Wende eingefroren.) Die Modellrate behaelt den
+        // alten, engen Deckel: sie ist ein Zustand, keine Messung.
+        const float rateCap = attRateValid
+                            ? (speedMps / config.holdMinTurnRadiusM * 57.29578f + 10.0f)
+                            : config.holdRateMaxDegS;
+        if (!status.reverseDirection && (speedMps > 0.1f) && (fabsf(rateHold) <= rateCap)) {
             holdAz = wrap360(holdAz + rateHold * dtS);
         }
     }

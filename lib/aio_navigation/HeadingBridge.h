@@ -585,6 +585,19 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // Rauschen): Betrag <= holdRateMaxDegS, kein yawRateZeroed, nicht rueckwaerts (dort
     // rechnet das Modell mit |v| und haette das falsche Vorzeichen).
     float    holdRateMaxDegS = 3.0f;
+    // --- L1 (2026-11-06): im HALTEN fuehrt die GEMESSENE Lagrate ----------------------
+    // Die Schleichfahrt-Rettung oben nimmt die MODELLRATE. Ohne Lenkwinkel-Messung ist
+    // die Modellrate ~0 (der Knickwinkel fehlt im Modell) - die Ausgabe fror deshalb ein,
+    // waehrend die Karosserie weiterdrehte. Messung 2026-11-06 (Knicklenker-Testmaeher,
+    // RTK, Lage sauber): 50...180 Grad Fehler in der 180-Grad-Wende, 44 % der
+    // Kurven-Frames standen auf "halten". Die Drehrate der Dual-Antenne ist eine
+    // MESSUNG und schlaegt den Zustand - dieselbe Hierarchie wie im uebrigen Modul.
+    bool     holdRateFromAttitude = true;
+    // Obergrenze fuer dieses Weiterfuehren: physikalisch v / R_min. 0,60 m ist der engste
+    // Wenderadius des Testmaehers (115 cm Mähbreite, 10...20 cm Rest in der Kreismitte,
+    // 75 Grad Knick = (L/2)/tan(37,5 Grad) = 0,60 m). Beim Schlepper ist v hoeher, damit
+    // ist derselbe Deckel dort ebenfalls ausreichend.
+    float    holdMinTurnRadiusM = 0.60f;
     // --- 2026-10-18: Quellen-Bestaetigung (Heading) und Roll-Reinigung --------------
     // Betreiber: "1 s Uebergang zwischen den Quellen ist ok, aber zuerst sicher sein,
     // dass die neuen Daten stimmen - die ersten Werte nach Rueckkehr vom Empfang sind
