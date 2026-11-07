@@ -52,7 +52,11 @@ struct AogMsgDef {
     uint8_t     seconds;   // Anzeigedauer in AOG
     uint8_t     colour;    // 0 = Salmon (Warnung), sonst Bisque (Info)
     uint8_t     prio;      // hoeher = darf eine LAUFENDE Meldung verdraengen
-    uint32_t    minGapMs;  // Mindestabstand derselben Meldung
+    uint32_t    minGapMs;  // SICHERHEITSNETZ gegen Flattern - NICHT der Wiederholungstakt!
+                           // Seit 2026-11-06h sind die Meldungen FLANKENGETRIGGERT: gesendet
+                           // wird einmal je Auftreten, erneut erst, wenn die Bedingung weg
+                           // war (siehe AutosteerProcessor::hwEdge). Der Abstand greift nur,
+                           // wenn eine Bedingung hektisch hin und her springt.
 };
 
 inline const AogMsgDef& aogMsgDef(AogMsgId id) {
@@ -142,10 +146,20 @@ public:
 
     // Katalogmeldung in der eingestellten Sprache.
     bool send(AogMsgId id, uint32_t nowMs) {
+        const int i = (int)id;
+        if ((i < 0) || (i >= (int)AOG_MSG_COUNT)) { return false; }
         const AogMsgDef& d = aogMsgDef(id);
+        // Sicherheitsnetz JE MELDUNG (2026-11-06h): vorher wurde nur gegen die zuletzt
+        // gesendete Meldung verglichen - schob sich eine andere dazwischen (z. B. WeakFix),
+        // war der Abstand wirkungslos und dieselbe Meldung konnte kurz darauf erneut kommen.
+        if ((lastPerMsgMs_[i] != 0u) && ((uint32_t)(nowMs - lastPerMsgMs_[i]) < d.minGapMs)) {
+            return false;
+        }
         const char* t = textFor(id);
         if ((t == nullptr) || (t[0] == '\0')) { return false; }
-        return sendText(t, d.seconds, d.colour, d.prio, d.minGapMs, nowMs);
+        if (!sendText(t, d.seconds, d.colour, d.prio, d.minGapMs, nowMs)) { return false; }
+        lastPerMsgMs_[i] = (nowMs == 0u) ? 1u : nowMs;
+        return true;
     }
 
 private:
@@ -156,6 +170,8 @@ private:
     uint8_t     lastPrio_ = 0;
     char        nameBuf_[49] = { 0 };
     bool        enabled_ = true;   // Hauptschalter, Default AN (wie bisher)
+    // Letzter Sendezeitpunkt JE Katalogmeldung (Sicherheitsnetz, siehe send()).
+    mutable uint32_t lastPerMsgMs_[AOG_MSG_COUNT] = {};
     // LOCAL-Texte (192 Byte RAM). Leer = EN benutzen.
     char        local_[AOG_MSG_COUNT][AOG_LOCAL_LEN] = {};
 };

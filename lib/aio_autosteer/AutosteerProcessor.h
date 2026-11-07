@@ -191,6 +191,11 @@ private:
     uint32_t  hwMsgLastMs  = 0;
     uint32_t  hwWeakT0     = 0;
     uint32_t  hwNoCourseT0 = 0;
+    // Flankenerkennung (2026-11-06h): eine Meldung je AUFTRETEN, nicht im Takt.
+    uint32_t  hwMsgStateBits = 0;                       // Bit je AogMsgId: Bedingung war wahr
+    uint32_t  hwMsgOffMs[AOG_MSG_COUNT] = {};            // wann sie zuletzt FALSCH wurde
+    // Liefert true NUR bei der Flanke 0 -> 1 (und wenn sie nicht gerade flattert).
+    bool hwEdge(AogMsgId id, bool cond, uint32_t nowMs);
     void updateHardwareMessages();
 
 public:

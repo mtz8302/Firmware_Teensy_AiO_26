@@ -1698,9 +1698,37 @@ void AutosteerProcessor::saveLocalHardwareMessageTexts() {
     aogMsgStoreSave(hardwareMsg);
 }
 
+// Flankenerkennung je Meldung (2026-11-06h).
+// Betreiber-Regel: "jede Meldung nur 1x nach dem Auftreten, erst das naechste Mal, wenn sich
+// wieder was aendert". Vorher wurde ein anhaltender ZUSTAND im minGap-Takt (15/20 s)
+// wiederholt - dieselbe Warnung erschien also mehrfach fuer dasselbe Ereignis.
+// Jetzt: gesendet wird nur bei der Flanke 0 -> 1. Der Merker faellt erst zurueck, wenn die
+// Bedingung wirklich weg ist; war sie weniger als hwEdgeHoldOffMs weg, gilt das als Flattern
+// an der Schwelle und es wird NICHT erneut gemeldet.
+static constexpr uint32_t hwEdgeHoldOffMs = 2000u;
+
+bool AutosteerProcessor::hwEdge(AogMsgId id, bool cond, uint32_t nowMs) {
+    const uint8_t i = (uint8_t)id;
+    if (i >= AOG_MSG_COUNT) { return false; }
+    const uint32_t bit = (1uL << i);
+    if (!cond) {
+        hwMsgStateBits &= ~bit;                 // Bedingung weg -> Merker zurueck
+        hwMsgOffMs[i] = nowMs;                  // Zeitpunkt merken (fuer den Flattern-Schutz)
+        return false;
+    }
+    if ((hwMsgStateBits & bit) != 0u) { return false; }   // war schon wahr: keine neue Flanke
+    // Flattern: gerade eben erst weg gewesen -> noch nicht wieder melden. Der Merker bleibt
+    // dabei FALSCH, damit die Meldung nach Ablauf der Ruhezeit von selbst kommt.
+    if ((hwMsgOffMs[i] != 0u) &&
+        ((uint32_t)(nowMs - hwMsgOffMs[i]) < hwEdgeHoldOffMs)) { return false; }
+    hwMsgStateBits |= bit;
+    return true;
+}
+
 // Warnungen aus dem Bridge-Zustand. Ein ZUSTAND wird erst nach 2 s gemeldet (sonst flattert
-// die Anzeige bei jedem schlechten Epoch), ein EREIGNIS (Positionssprung) sofort. Abstaende
-// und Prioritaeten stehen im Katalog, damit sich Meldungen nicht gegenseitig verdraengen.
+// die Anzeige bei jedem schlechten Epoch), ein EREIGNIS (Positionssprung) sofort. Gemeldet
+// wird je AUFTRETEN einmal (hwEdge); die Abstaende im Katalog sind nur noch ein
+// Sicherheitsnetz gegen hektisches Hin und Her.
 void AutosteerProcessor::updateHardwareMessages() {
     if (!hardwareMsg.isEnabled()) { return; }   // Hauptschalter aus (Web-UI)
     const uint32_t now = millis();
@@ -1718,15 +1746,27 @@ void AutosteerProcessor::updateHardwareMessages() {
     if (!st.attitudeTrusted) { if (hwWeakT0 == 0u) { hwWeakT0 = now; } } else { hwWeakT0 = 0u; }
     const bool noCourse = (!st.pathChordValid && !st.travelWitnessValid && (st.speedFusedMps > 1.0f));
     if (noCourse) { if (hwNoCourseT0 == 0u) { hwNoCourseT0 = now; } } else { hwNoCourseT0 = 0u; }
-    if (st.pathChordSpike) { (void)sendHardwareMessage(AogMsgId::PosJump); }
-    if (haveAttitude &&
-        ((st.state == HeadingBridge::State::BRIDGE) || (st.state == HeadingBridge::State::COAST))) {
+
+    // Jede Meldung nur bei ihrer FLANKE (0 -> 1). Zustaende muessen 2 s stehen, bevor sie
+    // als "aufgetreten" gelten; der Sprung ist ein Ereignis und damit selbst die Flanke.
+    const bool weakOn = haveAttitude && (hwWeakT0 != 0u) &&
+                        ((uint32_t)(now - hwWeakT0) >= 2000u);
+    const bool bridgeOn = haveAttitude &&
+                          ((st.state == HeadingBridge::State::BRIDGE) ||
+                           (st.state == HeadingBridge::State::COAST));
+    const bool noCourseOn = (hwNoCourseT0 != 0u) &&
+                            ((uint32_t)(now - hwNoCourseT0) >= 2000u);
+
+    if (hwEdge(AogMsgId::PosJump, st.pathChordSpike, now)) {
+        (void)sendHardwareMessage(AogMsgId::PosJump);
+    }
+    if (hwEdge(AogMsgId::Bridge, bridgeOn, now)) {
         (void)sendHardwareMessage(AogMsgId::Bridge);
     }
-    if (haveAttitude && (hwWeakT0 != 0u) && ((uint32_t)(now - hwWeakT0) >= 2000u)) {
+    if (hwEdge(AogMsgId::WeakFix, weakOn, now)) {
         (void)sendHardwareMessage(AogMsgId::WeakFix);
     }
-    if ((hwNoCourseT0 != 0u) && ((uint32_t)(now - hwNoCourseT0) >= 2000u)) {
+    if (hwEdge(AogMsgId::NoCourse, noCourseOn, now)) {
         (void)sendHardwareMessage(AogMsgId::NoCourse);
     }
 }
