@@ -3120,6 +3120,20 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                                ? (config.outMaWheelHiDeg - config.outMaWheelLoDeg) : 0.1f);
             maMsEff *= (1.0f - tMa);
         }
+        // 2026-11-06: dieselbe Daempfung auf der GEMESSENEN DREHRATE (Begruendung und Messreihe
+        // siehe Config::outMaRateLoDegS). Ohne Lenkwinkelsensor ist awMa immer ~0, das Fenster
+        // steht also in der Kurve voll - genau dort kostet es die Kurvenantwort.
+        {
+            const float rateMa = fabsf(attRateDegS);
+            if (rateMa >= config.outMaRateHiDegS) {
+                maMsEff = 0.0f;
+            } else if (rateMa > config.outMaRateLoDegS) {
+                const float tMa2 = (rateMa - config.outMaRateLoDegS) /
+                                   ((config.outMaRateHiDegS > config.outMaRateLoDegS + 0.1f)
+                                    ? (config.outMaRateHiDegS - config.outMaRateLoDegS) : 0.1f);
+                maMsEff *= (1.0f - tMa2);
+            }
+        }
         uint16_t want = (uint16_t)((maMsEff + 5.0f) / 10.0f);   // Ticks zu 10 ms
         if (want > OutMaN) { want = OutMaN; }
         if (want > outMaCount) { want = (uint16_t)outMaCount; }

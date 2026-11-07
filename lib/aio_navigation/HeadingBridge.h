@@ -630,6 +630,16 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // Der Winkel ist der wirksame (trim-korrigiert), wie im Modell.
     float    outMaWheelLoDeg = 3.0f;   // bis hier: volles Fenster
     float    outMaWheelHiDeg = 10.0f;  // ab hier: aus
+    // 2026-11-06: dasselbe fuer die GEMESSENE DREHRATE. Ohne Lenkwinkelsensor ist
+    // |wheel - trim| immer ~0, das Fenster bleibt also in der Kurve voll stehen - es gibt
+    // dann nichts, was es ausblendet. Gemessen (Ref-Log knick_125_241, 457 Kurvenframes):
+    // MA 300 ms fest  -> 23 % "ruckelig", 77 stehende Frames, Stand-p99 2,7 Grad
+    // MA ganz aus     -> 17 %, 52 stehende,          Stand-p99 3,4
+    // drehrateabhaengig (3/15) -> 18 %, 53 stehende, Stand-p99 2,0  <- beide Ziele erreicht
+    // Also: Stillstand glaetten (dort ist der MA fast wirkungslos: p50 0,20 -> 0,30 Grad),
+    // in der Kurve nicht. Gleiche lineare Ausblendung wie beim Lenkwinkel.
+    float    outMaRateLoDegS = 3.0f;    // bis hier: volles Fenster
+    float    outMaRateHiDegS = 15.0f;   // ab hier: aus
     // --- Geschwindigkeit aus WEG/ZEIT (2026-10-14, Betreiber-Auftrag) ---------------
     // Warum: das Feld-Log 18-47 (die Sitzung mit der "nicht gefahrenen" 90-Grad-Kurve)
     // hatte eine Empfaenger-Geschwindigkeit, die bis 2,94 m/s von Weg/Zeit abwich
