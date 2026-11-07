@@ -29,6 +29,9 @@
 // External network function
 extern void sendUDPbytes(uint8_t* data, int len);
 
+// PGN 221: Transport fuer Hardware-Meldungen (Definition weiter unten) - 2026-11-06g
+static void aogHwTx(const uint8_t* d, int len);
+
 // External objects and pointers
 extern ConfigManager configManager;
 // extern LEDManager ledManager; // Using FSM version now
@@ -99,6 +102,11 @@ bool AutosteerProcessor::init() {
     }
     
     LOG_INFO(EventSource::AUTOSTEER, "Initializing AutosteerProcessor");
+
+    // PGN 221: Hardware-Meldungen (2026-11-06g). Transport ist der vorhandene UDP-Weg.
+    // Sprache folgt WebLanguage (ENGLISH=0, GERMAN=1); der Sketch kann sie umstellen
+    // (setHardwareMessageLanguage), wenn der Bediener die Sprache wechselt.
+    hardwareMsg.begin(aogHwTx, AogMsgLang::DE);
 
     // The central per-fix position/state ring (knowledge/position_ring_buffer_architecture.md).
     // init() only clears head/counters: the 21.6 KB of storage is a DMAMEM array in RAM2 at
@@ -1658,7 +1666,52 @@ void AutosteerProcessor::selectSteerAngle() {
 
 }
 
+// ---------------------------------------------------------------------------
+// PGN 221: Hardware-Meldungen nach AgOpenGPS (2026-11-06g)
+// ---------------------------------------------------------------------------
+// Format/Katalog: lib/aio_system/aog_hwmsg.h. In AOG muss dafuer
+// Config -> Display -> "Hardware Messages" eingeschaltet sein, sonst blendet AOG
+// das Label nicht ein (GUI.Designer.cs: isHardwareMessages = false).
+static void aogHwTx(const uint8_t* d, int len) {
+    sendUDPbytes(const_cast<uint8_t*>(d), len);
+}
+
+bool AutosteerProcessor::sendHardwareMessage(const char* text, uint8_t seconds, uint8_t colour,
+                                             uint8_t prio, uint32_t minGapMs) {
+    return hardwareMsg.sendText(text, seconds, colour, prio, minGapMs, millis());
+}
+
+bool AutosteerProcessor::sendHardwareMessage(AogMsgId id) {
+    return hardwareMsg.send(id, millis());
+}
+
+// Warnungen aus dem Bridge-Zustand. Ein ZUSTAND wird erst nach 2 s gemeldet (sonst flattert
+// die Anzeige bei jedem schlechten Epoch), ein EREIGNIS (Positionssprung) sofort. Abstaende
+// und Prioritaeten stehen im Katalog, damit sich Meldungen nicht gegenseitig verdraengen.
+void AutosteerProcessor::updateHardwareMessages() {
+    const uint32_t now = millis();
+    if (hwMsgLastMs != 0u && (uint32_t)(now - hwMsgLastMs) < 100u) { return; }
+    hwMsgLastMs = (now == 0u) ? 1u : now;
+    const HeadingBridge::Status& st = headingBridge.getStatus();
+    if (!st.attitudeTrusted) { if (hwWeakT0 == 0u) { hwWeakT0 = now; } } else { hwWeakT0 = 0u; }
+    const bool noCourse = (!st.pathChordValid && !st.travelWitnessValid && (st.speedFusedMps > 1.0f));
+    if (noCourse) { if (hwNoCourseT0 == 0u) { hwNoCourseT0 = now; } } else { hwNoCourseT0 = 0u; }
+    if (st.pathChordSpike) { (void)sendHardwareMessage(AogMsgId::PosJump); }
+    if ((st.state == HeadingBridge::State::BRIDGE) || (st.state == HeadingBridge::State::COAST)) {
+        (void)sendHardwareMessage(AogMsgId::Bridge);
+    }
+    if ((hwWeakT0 != 0u) && ((uint32_t)(now - hwWeakT0) >= 2000u)) {
+        (void)sendHardwareMessage(AogMsgId::WeakFix);
+    }
+    if ((hwNoCourseT0 != 0u) && ((uint32_t)(now - hwNoCourseT0) >= 2000u)) {
+        (void)sendHardwareMessage(AogMsgId::NoCourse);
+    }
+}
+
 void AutosteerProcessor::sendPGN253() {
+    // PGN 221 (Hardware-Meldungen): hier mitlaufen lassen, sendPGN253() ist der regulaere
+    // Takt zum PC (2026-11-06g). Eigene Entprellung innen (10 Hz).
+    updateHardwareMessages();
     // PGN 253 - Status data TO AgOpenGPS
     // Format: {header, source, pgn, length, 
     //          steerAngleLo, steerAngleHi,    // bytes 5-6: actual steer angle

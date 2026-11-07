@@ -8,6 +8,7 @@
 #define AUTOSTEER_PROCESSOR_H
 
 #include <Arduino.h>
+#include "aog_hwmsg.h"   // PGN 221: Hardware-Meldungen nach AgOpenGPS (mehrsprachig)
 // External pointers
 class ADProcessor;
 extern ADProcessor adProcessor;
@@ -183,6 +184,14 @@ private:
     // funktioniert. Auch die dreistufige Anschlag-Kalibrierung ist weg -
     // countsPerDegree liefert AgOpenGPS.
 
+    // --- PGN 221: Hardware-Meldungen nach AgOpenGPS (2026-11-06g) --------------------
+    // Eigenes Zeitfenster, damit die Meldungen unabhaengig vom PGN-253-Takt bewertet werden.
+    AogHwMsg  hardwareMsg;
+    uint32_t  hwMsgLastMs  = 0;
+    uint32_t  hwWeakT0     = 0;
+    uint32_t  hwNoCourseT0 = 0;
+    void updateHardwareMessages();
+
 public:
     // Singleton access
     static AutosteerProcessor* getInstance();
@@ -191,6 +200,16 @@ public:
     bool init();
     void process();
     void initializeFusion();  // Initialize sensor fusion separately
+
+    // --- PGN 221: Hardware-Meldungen nach AgOpenGPS (2026-11-06g) ---------------------
+    // Erscheinen in AOG als eingeblendetes Label (Config -> Display -> "Hardware Messages"
+    // muss dort EIN sein). Sprache passt zu WebLanguage (ENGLISH=0, GERMAN=1).
+    void setHardwareMessageLanguage(AogMsgLang lang) { hardwareMsg.setLang(lang); }
+    // Freitext (z. B. Uhrzeit); Anzeigedauer/Farbe/Prioritaet/Abstand gibt der Aufrufer vor.
+    bool sendHardwareMessage(const char* text, uint8_t seconds, uint8_t colour,
+                             uint8_t prio, uint32_t minGapMs);
+    // Katalogmeldung in der eingestellten Sprache (Texte siehe aog_hwmsg.h).
+    bool sendHardwareMessage(AogMsgId id);
     
     // PGN handlers
     void handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size_t len);
