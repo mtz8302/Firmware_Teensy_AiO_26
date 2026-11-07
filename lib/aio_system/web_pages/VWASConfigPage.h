@@ -149,7 +149,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
       driving, 3 drives, 520 samples, sd 0.9&deg;). A generic 90 costs 1.7&deg; in <b>every</b>
       frame. Enter the same value in AgOpenGPS.</div>
     <button class="btn btn-primary" onclick="saveGeometry()">Save antenna geometry</button>
-    <button class="btn btn-secondary" onclick="loadGeometry()">Refresh display</button>
+    <button class="btn btn-secondary" onclick="reloadAll()">Reload from device</button>
     <button class="btn btn-secondary" onclick="useMeasuredRef()">Use measured length as reference</button>
 
     <div id="geometryResult" class="hint">-</div>
@@ -487,6 +487,20 @@ function useMeasuredRef() {
     .catch(e => { document.getElementById('geometryResult').innerText = 'Error: ' + e; });
 }
 
+
+// 2026-11-06: "Reload from device" - ALLE Werte neu holen und sichtbar quittieren.
+// Vorher hiess der Knopf "Refresh display" und rief nur loadGeometry(): standen die Werte
+// schon im Formular, passierte sichtbar NICHTS - das sah aus wie "der Knopf geht nicht".
+// Jetzt: sofortige Rueckmeldung, dann Fahrzeugdaten UND Antennen-Geometrie neu laden.
+function reloadAll() {
+  const g = document.getElementById('geometryResult');
+  const s = document.getElementById('saveResult');
+  if (g) { g.innerText = 'reloading from device...'; }
+  if (s) { s.innerText = ''; }
+  loadConfig();
+  loadGeometry();
+  if (typeof pollStatus === 'function') { pollStatus(); }
+}
 
 loadGeometry();
 loadConfig();
