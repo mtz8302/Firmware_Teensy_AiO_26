@@ -23,9 +23,21 @@ Die frueheren Abschnitte 0/3/4/5/6 stehen weiter hier im Ueberblick.
 | Ablauf, Invarianten, Git-Regeln, Kennzahlen-Panel | `WORKFLOW.md` | I1...I11 |
 | **Naechste Fahrt**: was fahren, welche Spalten auswerten, Zahl->Entscheidung | `70_feldprobe.md` | - |
 | Ziele, Messlatte (was "gut" heisst) | `01_ziele.md` | - |
+| Meldungen im Fuehrerhaus (PGN 221), Sprachen, Schalter, Meldungs-EEPROM | `90_aog_messages.md` | B10.80 |
 | Werkzeuge finden | `tools/analysis/README.md`, `tools/heading_bridge/README.md`, `tools/sim/README.md` | - |
 
 ## 0. STAND (diesen Block bei jeder Sitzung zuerst lesen und aktualisieren)
+
+* **FAHRDYNAMIK-SITZUNG 2026-11-06 (Branch `feat/hold-att-rate`)**: die Kennzahl
+  "ruckelig" (Ausgabe steht < 0,2 Grad/100 ms ODER springt > 3x Lageschritt, in
+  Kurvenframes der Lage > 2 Grad/100 ms) fiel in fuenf Schritten **23 % -> 18 -> 11 -> 7 ->
+  4 -> 3 %**; stehende Frames **77 -> 6**; Standrauschen p50 0,2 / p90 1,0 / p99 2,1-2,5
+  Grad. Die fuenf Ursachen stehen als **B10.73...B10.77** in `10_heading.md` (MA-Fenster
+  nach Drehrate, Halten-Zweig in vier Teilen, gamma/2 ratenbegrenzt, LIVE-Rampe folgt der
+  Lagrate, Snap-Einfrieren entfernt). **B10.78** = Halte-Deckel aus der Fahrzeuggeometrie
+  (Knicklenker/Ackermann, deckungsgleich mit B10.33/B10.46), **B10.79** = was die Metrik
+  nicht sieht. Neu: **`90_aog_messages.md`** (PGN 221 Hardware-Meldungen im Fuehrerhaus).
+  Offene Punkte: `80_plan.md` §4.
 
 * **ZIEL GESCHAERFT (10-12, 01_ziele.md §1.0)**: das Heading soll auf Geraden und in leichten
   Kurven nur **±0,5°** schwanken und sich mit **≤ 1 °/s** ändern — **in Grad und Grad/s, nicht
@@ -344,6 +356,7 @@ welche Datei was beantwortet. Ziele und Zahlen: `01_ziele.md`. Plan und offene P
 | Datei | Beantwortet |
 |---|---|
 | `01_ziele.md` | Ziele, Akzeptanzkriterien, Messlatte je Pfad (H/P/R/VWAS) |
+| `90_aog_messages.md` | PGN 221 (Hardware-Messages): Format, Katalog, Flankentriggerung, Sprachen (EN/DE im Flash, LOCAL im EEPROM), EEPROM-Block 2000, Seite `/hwmsg` |
 | `archive/GRUNDZIELE_2026-10-11.md` | Original der Ziele-/Regel-/Plan-Sammlung (Archiv, ersetzt durch 01_ziele / 80_plan / WORKFLOW §8) |
 | `heading_bridge_concept.md` (10-01) | Gesamtkonzept, Fusion, Gates, Modellgleichung, Historie |
 | `heading_bridge_report_2026-10-02.md` | Messbericht Kurve/Brücke, Rauschzahlen, kritische Sektion |

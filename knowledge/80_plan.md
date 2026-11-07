@@ -100,6 +100,44 @@ die Schwellen nachziehen.
 
 ## 4. Offene Punkte und Widersprüche
 
+### Stand 2026-11-06 (Fahrdynamik-Sitzung, Branch `feat/hold-att-rate`)
+
+**Erledigt** (Belege: **B10.73...B10.79** in `10_heading.md`, neu `90_aog_messages.md`):
+
+* MA-Fenster nach Drehrate (23 -> 18 %), Halten-Zweig in vier Teilen (-> 11 %),
+  gamma/2 ratenbegrenzt (-> 7 %), LIVE-Rampe folgt der Lagrate + kein Snap-Einfrieren
+  (-> 4 %), Anwendungsrate 25 Grad/s (-> **3 %**), stehende Frames 77 -> 6.
+* Halte-Deckel aus der Fahrzeuggeometrie statt Maehwerks-Werten - fuer Ackermann
+  deckungsgleich mit der Tempo-Obergrenze aus B10.46 (19 Grad/s bei 1 m/s).
+* PGN 221 Hardware-Meldungen komplett: Katalog, Sprachen (EN/DE im Flash, LOCAL im EEPROM),
+  Hauptschalter, Seite `/hwmsg`, **flankengetriggert** (1x je Auftreten), Hardware-Filter
+  fuer die zwei Bridge-Meldungen.
+* EEPROM-Karte aufgeraeumt: Feld-Layout (1...1299, 3000...4283) unberuehrt, Zusaetze
+  1300...2999 mit Reserve, Meldungstexte bei 2000 (500 reserviert).
+
+**Offen, priorisiert:**
+
+1. **gamma/2-Schaetzung ruhiger machen** - die letzten 3 % sind Bewegung des SCHAETZERS,
+   kein Limiter-Thema: `artEstTauS` 0,6 -> 1,2 s testen, oder gamma hilfsweise aus der
+   Pfadkruemmung stuetzen (beta nur als Rueckfall).
+2. **Ursache 2 der 90-Grad-Kurve (aus §4.1, unveraendert offen)**: der Pfad-Begrenzer
+   frisst echte Kurven (141...151 Grad verloren, `rl_clip` 24...51). Vorschlag 1b liegt
+   vor. In unserer Messung erscheint dieselbe Wurzel als **`pc_rej = 8` in 92 % der
+   Halten-Kurvenframes** (Sprungtor blockt den Kurs, weil die LAGE schlecht ist) - der
+   Halten-Zweig ist nur das Symptom.
+3. **Modellskala-Widerspruch (aus §4.2)**: L_eff 2,14 vs 2,95 m, Fac 1,30 - ungeloest.
+4. **1.2a/1.2b nicht gebaut**: `attPathTol` / `lagePasstZumPfad` existiert im Code nicht.
+   Wuerde Punkt 2 entschaerfen (Kriterium `attOk = hasDualHeading && !attJumped &&
+   |att+Offset - Pfad| <= 25 Grad`).
+5. **Snap-Mechanik aufraeumen**: seit B10.77 (kein Einfrieren) ist `outSnapConfirmMs` fast
+   wirkungslos - entweder richtig oder ganz weg; `outSnapRateDegS` neu bewerten.
+6. **`kOutHardRateDegS` 200 Grad/s** ist fuer den Ackermann-Fall nie geprueft worden.
+7. **FELDPROBE fehlt** (der eigentliche naechste Schritt): alles oben ist Sim/Replay gegen
+   EIN Log. Zu pruefen: 25 Grad/s Knickwinkel in der AOG-Darstellung, Verhalten der
+   Meldungen im Einsatz, der Hauptschalter.
+8. **Sim-Repo-Hygiene**: 175 Commits vor `origin/main`, dazu Build-Artefakte
+   (`SourceCode_AgOpenGPS/**/obj/`) als "modified" - `.gitignore` ergaenzen.
+
 Erledigte Punkte werden hier gestrichen und im jeweiligen Thema-Dokument belegt.
 
 1. **90-Grad-Kurve** – teilgefixt, zwei getrennte Ursachen:
