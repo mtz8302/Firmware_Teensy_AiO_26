@@ -5,13 +5,15 @@
 // Hier liegt NUR die dritte Sprache: was der Bediener im Web-UI eintippt. Ein leerer
 // Eintrag faellt auf EN zurueck (Rueckfallkette in AogHwMsg::textFor).
 //
-// Block: EEPROMLayout.h -> AOG_MSG_ADDR = 1300 (dort als frei dokumentiert), 100 Byte.
+// Block: EEPROMLayout.h -> AOG_MSG_ADDR = 2000 (dort mit der vollstaendigen Karte),
+// AOG_MSG_SIZE = 400 reserviert. Belegt sind 200 Byte (Kopf 8 + 4 x 48); die restlichen
+// 200 sind Luft, damit spaetere Meldungen nicht gegen den naechsten Block stossen.
 // Aufbau:
 //   0   magic uint16  0xA0C1
-//   2   ver   uint8   1
+//   2   ver   uint8   2
 //   3   crc   uint8   Summe ueber die Bytes ab Offset 4 bis zum Ende
 //   4   len[] uint8   Laenge je Meldung (0 = leer -> EN)
-//   8   text[4][24]   96 Byte, je nullterminiert
+//   8   text[4][48]   192 Byte, je nullterminiert
 //
 // WICHTIG: Teensy-EEPROM ist flash-emuliert - jeder write kopiert einen ganzen 4-kB-Sektor
 // um. aogMsgStoreSave() deshalb NUR beim Speichern im Web-UI aufrufen, nie periodisch.

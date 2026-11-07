@@ -71,19 +71,33 @@
 #define VEHICLE_SETUP_ADDR      1500
 #define VEHICLE_SETUP_SIZE      256
 
-// --- 1300-1499: LOKALE TEXTE der AOG-Hardware-Meldungen (PGN 221) --- 2026-11-06
+// --- LOKALE TEXTE der AOG-Hardware-Meldungen (PGN 221) --- 2026-11-06
 // EN und DE sind im Flash kompiliert und kosten KEINEN EEPROM. Hier liegt nur, was der
 // Bediener im Web-UI selbst eintippt (Sprache "LOCAL"); ein leerer Eintrag faellt auf EN
 // zurueck. Aufbau (siehe aog_hwmsg_store.h): magic(2) ver(1) crc(1) len[4] text[4][48].
-// Aufwand: 200 Byte - der Block ist damit VOLL (bei 1500 beginnt der Fahrzeug-Setup-Block).
-// Geschrieben wird NUR beim Speichern im Web-UI (Teensy-EEPROM ist flash-emuliert:
-// ein write kopiert einen ganzen 4-kB-Sektor um).
+//
+// ABLAGE (Betreiber-Vorgabe 2026-11-06: "das Layout vom Original-Fork soll als Grundgeruest
+// erhalten bleiben"): das Feld-Layout endet bei 1299, die Modul-Identifikation beginnt bei
+// 3000. Alles dazwischen ist in der Feld-Firmware UNBENUTZT - dort liegen die Zusaetze,
+// mit Reserve nach oben:
+//
+//   1300 - 1499   frei (Reserve, 200 Byte)
+//   1500 - 1755   Fahrzeug-Setup   (VEHICLE_SETUP_SIZE 256, belegt bis 1608)
+//   1756 - 1999   frei (244 Byte)
+//   2000 - 2399   AOG-Meldungstexte (AOG_MSG_SIZE 400 reserviert, belegt 200)
+//   2400 - 2999   frei (600 Byte)
+//
+// Die 400 Byte sind ABSICHTLICH nicht ausgeschoepft: 4 Texte x 48 Zeichen + Kopf sind
+// 200 Byte, die anderen 200 sind Luft, damit spaetere Meldungen (oder laengere Texte)
+// NICHT wieder gegen den naechsten Block stossen. Geschrieben wird nur beim Speichern im
+// Web-UI (Teensy-EEPROM ist flash-emuliert: ein write kopiert einen 4-kB-Sektor um).
 // ACHTUNG: EEPROM_VERSION dafuer NICHT erhoehen - ein Bump loescht alle Config-Bloecke.
-// VER 2 = 48-Zeichen-Texte (VER 1 hatte 24 Zeichen; ein alter Block wird verworfen).
-#define AOG_MSG_ADDR            1300
-#define AOG_MSG_SIZE            200    // sizeof(AogMsgBlob), per static_assert geprueft
+// (Die Adresse hat sich am 2026-11-06 von 1300 auf 2000 verschoben; ein alter Block bei
+// 1300 wird einfach nicht mehr gelesen - er liegt in der Reserve und schadet nicht.)
+#define AOG_MSG_ADDR            2000
+#define AOG_MSG_SIZE            400    // reserviert; belegt sind sizeof(AogMsgBlob) = 200
 #define AOG_MSG_MAGIC           0xA0C1
-#define AOG_MSG_VER             2
+#define AOG_MSG_VER             2      // 2 = 48-Zeichen-Texte (VER 1 hatte 24)
 
 // --- Gemeinsamer Fahrzeug-Setup-Block: Kopf ------------------------------------
 // Aufbau (Little Endian, Teensy 4.1):
