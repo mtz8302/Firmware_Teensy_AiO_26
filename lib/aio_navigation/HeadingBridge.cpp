@@ -686,7 +686,12 @@ void FLASHMEM HeadingBridge::init() {
                        "gps_a,aog_zero,aog_wasoff,cpd_aog,"
                        // vwas_trim: der Trim, den das MODELL anwendet (B7.21) - eigene
                        // Spalte, damit der Effekt messbar ist; sc_b bleibt der Fehlerindikator.
-                       "vwas_trim,path_chord,pc_ok,pc_lag,az_src,pc_len,pc_rej,pc_dev,ant_lead,art_half,veh_type,yr_raw,cr_resid\r\n"));
+                       "vwas_trim,path_chord,pc_ok,pc_lag,az_src,pc_len,pc_rej,pc_dev,ant_lead,art_half,veh_type,yr_raw,cr_resid,"
+                       // B10.92 (2026-11-07): WARUM die Epoche als gestoert gilt. Ohne diese
+                       // Spalte war die Ursache im Feld nicht zu finden: am 11-07 hatten 1378
+                       // Frames att_q=1, obwohl Baseline-Abweichung UND uniHdgSd im gruenen
+                       // Bereich lagen - der Grund (headingQuality != 4) stand nirgends.
+                       "att_why,hdg_q\r\n"));
 #endif
     }
 
@@ -1405,35 +1410,44 @@ float FLASHMEM HeadingBridge::kinematicRateBoundDegS(bool includeRaises) const {
 // Return: 0 = clean epoch, 1 = degraded epoch, 2 = NO per-epoch figure available.
 // 2 must leave the behaviour EXACTLY as before this gate (operator note: "the code
 // works well with F9P + IMU" - an F9P sends no UNIHEADINGA).
-uint8_t FLASHMEM HeadingBridge::attitudeQualityNow() const {
-    if (!config.outQualityGateEnabled) return 2;
-    const auto& d = gnssProcessor.getData();
-    if (!d.hasDualHeading) return 2;     // attitude comes from COG/IMU: not this gate
-    // Does this receiver state a per-epoch figure at all? uniCount > 0 means we have
-    // seen an UNIHEADINGA sentence since boot; 0 = receiver does not send it.
-    if (gnssProcessor.getUniCount() == 0) {
-        return (d.headingQuality == 4) ? 2 : 1;
+uint8_t FLASHMEM HeadingBridge::attitudeQualityNow(void) {
+    // B10.92 (2026-11-07): Rueckgabewerte unveraendert (0 = sauber, 1 = gestoert, 2 = keine
+    // Angabe je Epoche). Zusaetzlich wird JETZT festgehalten, WELCHE Klausel gegriffen hat
+    // (Status::attQualReason, HR-Spalte att_why) - ohne das war im Feld nicht zu entscheiden,
+    // ob die Basislinie, uniHdgSd oder das QF-Feld die Maschine drosselt. Die Funktion ist
+    // dafuer nicht mehr const (einziger Aufrufer ist update(), nicht const).
+    uint8_t why = 0;
+    uint8_t result = 2;
+    if (!config.outQualityGateEnabled) {
+        why = 128;                  // Tor abgeschaltet -> wie vorher
+    } else {
+        const auto& d = gnssProcessor.getData();
+        if (!d.hasDualHeading) {
+            why = 1;                // Lage kommt aus COG/IMU: dieses Tor ist nicht zustaendig
+        } else if (gnssProcessor.getUniCount() == 0) {
+            // Empfaenger liefert kein UNIHEADINGA (z. B. F9P) -> qf entscheidet.
+            if (d.headingQuality == 4) { result = 2; }
+            else { why = 2 | 4; result = 1; }
+        } else {
+            if (d.headingQuality != 4) { why |= 4; }
+            if (!(d.uniHdgStdDevDeg > 0.0f)) { why |= 8; }
+            if (d.uniHdgStdDevDeg > config.uniHdgSdGoodDeg) { why |= 16; }
+            if (d.uniHdgStdDevDeg >= config.uniHdgSdBadDeg) { why |= 32; }
+            // Dieselbe Referenz, dieselbe Abweichung und (seit 10-03) dieselbe Toleranz
+            // (Config::baselineTolPct) wie das Verwerfungs-Tor in evaluateAttitudeFrame().
+            // Nur die Folge ist anders: hier wird die Epoche GEDROSSELT (Ausgabe
+            // ratenbegrenzt), dort wird die Messung VERWORFEN. Eine falsche Referenz trifft
+            // deshalb BEIDE Wege - ein richtiger EEPROM-Wert reparieren beide.
+            if (!status.baselineTestDisabled &&
+                status.baselineRefM > 0.01f &&
+                fabsf(status.baselineDevPct) > config.baselineTolPct) {
+                why |= 64;
+            }
+            result = (why != 0u) ? 1u : 0u;
+        }
     }
-    bool degraded = (d.headingQuality != 4);
-    // uniHdgStdDevDeg == 0 with UNIHEADINGA present is the receiver's own
-    // INSUFFICIENT_OBS: the sentence arrives, the solution does not exist.
-    if (!(d.uniHdgStdDevDeg > 0.0f)) degraded = true;
-    if (d.uniHdgStdDevDeg > config.uniHdgSdGoodDeg) degraded = true;
-    if (d.uniHdgStdDevDeg >= config.uniHdgSdBadDeg) degraded = true;
-    // NOTE: the SAME reference, the SAME deviation and (since 2026-10-03) the SAME tolerance
-    // - Config::baselineTolPct - as the reject gate in evaluateAttitudeFrame(). Only the
-    // consequence differs: here the epoch is marked DEGRADED (att_q = 0, the output is
-    // rate-limited) and the attitude is still used; there the measurement is DISCARDED.
-    // A wrong reference therefore hits BOTH paths, which is why the safety net switches both
-    // off and why one correct EEPROM value fixes both.
-    // baselineTolPct has three consistent users: this gate, the reject gate, and the learn
-    // gate (which frames may feed the learned reference) - one number, one meaning.
-    if (!status.baselineTestDisabled &&
-        status.baselineRefM > 0.01f &&
-        fabsf(status.baselineDevPct) > config.baselineTolPct) {
-        degraded = true;
-    }
-    return degraded ? 1 : 0;
+    status.attQualReason = why;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -5433,11 +5447,19 @@ void FLASHMEM HeadingBridge::logRawFrame(uint32_t now, float speedMps, float whe
     // Argumente bleiben unangetastet - der Stack-Spill pro Aufruf wird dadurch KLEINER, nicht
     // groesser (Lehre aus B10.49: 120 Argumente in EINEM snprintf = Bootloop ueber den RAM1-Stack).
     used += snprintf(hrBuf + used, sizeof(hrBuf) - (size_t)used,
-                  ",%u,%.2f,%.2f,%.2f,%u,%.2f,%.2f\r\n",
+                  ",%u,%.2f,%.2f,%.2f,%u,%.2f,%.2f",
                   (unsigned)s_pcRej, (double)s_pcDevDeg,
                   (double)s_antLeadDeg, (double)s_artHalfDeg,
                   (unsigned)(hbIsArticulated() ? 2u : 0u), (double)s_rateRawDegS,
                   (double)s_crResidDeg);
+    if (used <= 0 || used >= (int)sizeof(hrBuf)) return;
+    // B10.92 (2026-11-07): die URSSACHE der Epochen-Bewertung, eigenes Haeeppchen.
+    // att_why = Bitmaske (siehe Status::attQualReason), hdg_q = rohe headingQuality des
+    // Empfaengers (4 = RTK fix, 5 = float, 0 = ungueltig). Damit ist im Feld sofort zu sehen,
+    // ob die Maschine wegen der Basislinie, wegen uniHdgSd oder wegen des QF-Feldes drosselt.
+    used += snprintf(hrBuf + used, sizeof(hrBuf) - (size_t)used,
+                  ",%u,%u\r\n",
+                  (unsigned)status.attQualReason, (unsigned)d.headingQuality);
     if (used <= 0 || used >= (int)sizeof(hrBuf)) return;
 
     if (used <= 0 || used >= (int)sizeof(hrBuf)) return;

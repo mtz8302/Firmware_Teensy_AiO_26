@@ -1699,6 +1699,23 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
         //                 residual (no jump reaches AOG), 1 = snapped (clean epoch, the
         //                 value is passed through without delay), 2 = no residual at all.
         int8_t   attQualGood = -1;
+    // B10.92 (2026-11-07): WARUM die Epoche so bewertet wurde, als Bitmaske (HR-Spalte att_why).
+    // Das Log zeigte bisher nur das Ergebnis (att_q); im Feld war die Ursache damit nicht zu
+    // finden: am 11-07 hatten 1378 Frames att_q = 1, obwohl Basislinien-Abweichung UND
+    // uniHdgSd im gruenen Bereich lagen - der wahre Grund (headingQuality != 4) stand in
+    // keiner Spalte.
+    //   1 = kein Dual-Heading (dieses Tor ist nicht zustaendig, Ergebnis 2)
+    //   2 = Empfaenger liefert kein UNIHEADINGA (dann entscheidet qf, Ergebnis 2)
+    //   4 = headingQuality != 4
+    //   8 = uniHdgStdDev fehlt bzw. ist 0 (INSUFFICIENT_OBS)
+    //  16 = uniHdgStdDev > uniHdgSdGoodDeg
+    //  32 = uniHdgStdDev >= uniHdgSdBadDeg
+    //  64 = |baselineDevPct| > baselineTolPct
+    // 128 = Qualitaets-Tor abgeschaltet (Ergebnis 2 = "wie vorher")
+    // att_why = 0 ZUSAMMEN mit att_q = -1 heisst: das Tor hat sich enthalten (z. B. kein
+    // UNIHEADINGA und headingQuality = 4) - dann ist nichts zu tun. att_why = 0 mit att_q = 1
+    // ist dagegen die saubere Epoche.
+    uint8_t  attQualReason = 0;
         uint8_t  outSnapSrc = 2;
         float    outResidLimDegS = 0.0f;   // bound applied to the output residual (deg/s)
         // A10 (2026-10-11): gemessenes Rauschen des EINGANGS und das alpha, das diese
@@ -2304,7 +2321,7 @@ private:
     float effectiveMeasurementR(uint8_t kind);
     // Per-epoch attitude quality from the receiver's own UNIHEADINGA figures
     // (0 = clean, 1 = degraded, 2 = no figure available -> treated as clean).
-    uint8_t attitudeQualityNow() const;
+    uint8_t attitudeQualityNow(void);
     // Yaw rate the machine can physically produce this tick (deg/s) - the bound the
     // MEASUREMENT limiter and the OUTPUT limiter both use (kinematics + margin,
     // raised by an accepted fix-to-fix turn).
