@@ -624,7 +624,10 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // 20-Grad-Sprung der AUSGABE: 22 der 457 Kurvenframes "sprangen" um 14...20 Grad.
     // Die Projektion von AOG (Vorderteil = heading - gamma/2) braucht keine Spruenge.
     // Messung: "ruckelig" 11 % -> 7 %, stehende Frames 24 -> 17.
-    float    artEstApplyRateDegS = 40.0f;  // Grad/s fuer das angewandte gamma/2
+    float    artEstApplyRateDegS = 25.0f;  // Grad/s fuer das angewandte gamma/2
+    // 2026-11-06f (A/B im Sim, Ref-Log knick_125_241): 15 Grad/s -> 15 ruckelig / 7 steht,
+    // 25 -> 15 / 6, 40 -> 17 / 7, 60 -> 19 / 7. 25 ist der beste Kompromiss: die Darstellung
+    // folgt schnell genug (voller Einschlag in ~0,7 s) und die Schaetzung zappelt nicht durch.
     // --- 2026-10-18: Quellen-Bestaetigung (Heading) und Roll-Reinigung --------------
     // Betreiber: "1 s Uebergang zwischen den Quellen ist ok, aber zuerst sicher sein,
     // dass die neuen Daten stimmen - die ersten Werte nach Rueckkehr vom Empfang sind
