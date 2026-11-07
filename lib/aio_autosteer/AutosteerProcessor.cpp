@@ -107,6 +107,8 @@ bool AutosteerProcessor::init() {
     // Sprache folgt WebLanguage (ENGLISH=0, GERMAN=1); der Sketch kann sie umstellen
     // (setHardwareMessageLanguage), wenn der Bediener die Sprache wechselt.
     hardwareMsg.begin(aogHwTx, AogMsgLang::DE);
+    // LOCAL-Texte aus dem EEPROM (Block 1300). Leeres Feld -> EN als Rueckfall.
+    (void)aogMsgStoreLoad(hardwareMsg);
 
     // The central per-fix position/state ring (knowledge/position_ring_buffer_architecture.md).
     // init() only clears head/counters: the 21.6 KB of storage is a DMAMEM array in RAM2 at

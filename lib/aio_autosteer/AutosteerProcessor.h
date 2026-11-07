@@ -8,7 +8,8 @@
 #define AUTOSTEER_PROCESSOR_H
 
 #include <Arduino.h>
-#include "aog_hwmsg.h"   // PGN 221: Hardware-Meldungen nach AgOpenGPS (mehrsprachig)
+#include "aog_hwmsg.h"        // PGN 221: Hardware-Meldungen nach AgOpenGPS (mehrsprachig)
+#include "aog_hwmsg_store.h"  // LOCAL-Texte im EEPROM (die dritte Sprache)
 // External pointers
 class ADProcessor;
 extern ADProcessor adProcessor;

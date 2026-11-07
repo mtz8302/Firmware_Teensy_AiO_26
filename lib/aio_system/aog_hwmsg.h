@@ -25,7 +25,10 @@
 #include <cstring>
 
 // Muss zu WebLanguage passen (SimpleWebManager.h): ENGLISH = 0, GERMAN = 1.
-enum class AogMsgLang : uint8_t { EN = 0, DE = 1 };
+// LOCAL = 2 liegt ABSICHTLICH dahinter: EN und DE sind im Flash fest kompiliert (kosten
+// keinen EEPROM), LOCAL tippt der Bediener im Web-UI ein und liegt im EEPROM
+// (lib/aio_system/aog_hwmsg_store.h, Block 1300). Ist ein LOCAL-Text leer, gilt EN.
+enum class AogMsgLang : uint8_t { EN = 0, DE = 1, LOCAL = 2 };
 
 // Meldungskatalog. Die Reihenfolge hier ist nur die Kennung - Prioritaet und
 // Anzeigedauer stehen in der Tabelle.
@@ -37,8 +40,12 @@ enum class AogMsgId : uint8_t {
     Count
 };
 
+static constexpr uint8_t AOG_MSG_COUNT     = (uint8_t)AogMsgId::Count;
+static constexpr uint8_t AOG_LOCAL_LEN     = 24;   // inkl. Nullterminator; AOG-Label fasst ~50
+static constexpr uint8_t AOG_MSG_MAX_BYTES = 48;   // harte Grenze je Meldung (UTF-8-Bytes)
+
 struct AogMsgDef {
-    const char* text[2];   // [0] = EN, [1] = DE
+    const char* text[2];   // [0] = EN, [1] = DE (im Flash, kosten keinen EEPROM)
     uint8_t     seconds;   // Anzeigedauer in AOG
     uint8_t     colour;    // 0 = Salmon (Warnung), sonst Bisque (Info)
     uint8_t     prio;      // hoeher = darf eine LAUFENDE Meldung verdraengen
@@ -67,6 +74,33 @@ public:
     AogMsgLang lang() const { return lang_; }
     uint32_t lastSendMs() const { return lastMs_; }
     const char* lastName() const { return nameBuf_; }
+
+    // --- LOCAL-Texte (vom Bediener im Web-UI eingetippt, liegen im EEPROM) -------------
+    // Setzt/löscht den Text einer Meldung. nullptr oder "" löscht ihn; dann gilt EN.
+    // Der Speicher (aog_hwmsg_store.h) ruft das beim Laden, das Web-UI beim Speichern.
+    void setLocalText(AogMsgId id, const char* t) {
+        const int i = (int)id;
+        if ((i < 0) || (i >= (int)AOG_MSG_COUNT)) { return; }
+        if ((t == nullptr) || (t[0] == '\0')) { local_[i][0] = '\0'; return; }
+        std::snprintf(local_[i], AOG_LOCAL_LEN, "%s", t);
+    }
+    const char* localText(AogMsgId id) const {
+        const int i = (int)id;
+        if ((i < 0) || (i >= (int)AOG_MSG_COUNT)) { return ""; }
+        return local_[i];
+    }
+    // Der Text, der WIRKLICH rausgeht: gewaehlte Sprache -> EN als Rueckfall.
+    const char* textFor(AogMsgId id) const {
+        const AogMsgDef& d = aogMsgDef(id);
+        if (lang_ == AogMsgLang::LOCAL) {
+            const char* t = local_[ (int)id ];
+            if ((t != nullptr) && (t[0] != '\0')) { return t; }
+        } else {
+            const char* t = d.text[(int)lang_];
+            if ((t != nullptr) && (t[0] != '\0')) { return t; }
+        }
+        return d.text[(int)AogMsgLang::EN];   // immer die vollstaendige Basis
+    }
 
     // Freitext (z.B. Uhrzeit als Info). false = nicht gesendet (Abstand/laufende Meldung).
     bool sendText(const char* txt, uint8_t sec, uint8_t colour, uint8_t prio,
@@ -100,7 +134,8 @@ public:
     // Katalogmeldung in der eingestellten Sprache.
     bool send(AogMsgId id, uint32_t nowMs) {
         const AogMsgDef& d = aogMsgDef(id);
-        const char* t = d.text[(int)lang_] ? d.text[(int)lang_] : d.text[0];
+        const char* t = textFor(id);
+        if ((t == nullptr) || (t[0] == '\0')) { return false; }
         return sendText(t, d.seconds, d.colour, d.prio, d.minGapMs, nowMs);
     }
 
@@ -111,6 +146,8 @@ private:
     uint32_t    busyUntilMs_ = 0;
     uint8_t     lastPrio_ = 0;
     char        nameBuf_[49] = { 0 };
+    // LOCAL-Texte (96 Byte RAM). Leer = EN benutzen.
+    char        local_[AOG_MSG_COUNT][AOG_LOCAL_LEN] = {};
 };
 
 #endif  // AOG_HWMSG_H
