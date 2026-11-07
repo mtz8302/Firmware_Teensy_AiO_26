@@ -75,6 +75,11 @@ public:
     void begin(TxFn fn, AogMsgLang lang = AogMsgLang::DE) { tx_ = fn; lang_ = lang; }
     void setLang(AogMsgLang l) { lang_ = l; }
     AogMsgLang lang() const { return lang_; }
+    // Hauptschalter (2026-11-06). Aus = es geht KEINE Meldung raus (auch die Uhr nicht).
+    // Der Zustand liegt im EEPROM-Block (aog_hwmsg_store.h) und wird beim Start geladen;
+    // ohne gespeicherten Block ist er AN, damit sich am bisherigen Verhalten nichts aendert.
+    void setEnabled(bool on) { enabled_ = on; }
+    bool isEnabled() const { return enabled_; }
     uint32_t lastSendMs() const { return lastMs_; }
     const char* lastName() const { return nameBuf_; }
 
@@ -108,6 +113,7 @@ public:
     // Freitext (z.B. Uhrzeit als Info). false = nicht gesendet (Abstand/laufende Meldung).
     bool sendText(const char* txt, uint8_t sec, uint8_t colour, uint8_t prio,
                   uint32_t minGapMs, uint32_t nowMs) {
+        if (!enabled_) { return false; }          // Hauptschalter aus -> nichts senden
         if ((tx_ == nullptr) || (txt == nullptr) || (txt[0] == '\0')) { return false; }
         // Eine noch laufende Meldung nicht ueberschreiben - ausser die neue ist wichtiger.
         if ((nowMs < busyUntilMs_) && (prio <= lastPrio_)) { return false; }
@@ -149,7 +155,8 @@ private:
     uint32_t    busyUntilMs_ = 0;
     uint8_t     lastPrio_ = 0;
     char        nameBuf_[49] = { 0 };
-    // LOCAL-Texte (96 Byte RAM). Leer = EN benutzen.
+    bool        enabled_ = true;   // Hauptschalter, Default AN (wie bisher)
+    // LOCAL-Texte (192 Byte RAM). Leer = EN benutzen.
     char        local_[AOG_MSG_COUNT][AOG_LOCAL_LEN] = {};
 };
 

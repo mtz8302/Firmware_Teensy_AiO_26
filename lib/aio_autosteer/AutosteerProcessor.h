@@ -217,6 +217,10 @@ public:
     void setLocalHardwareMessageText(AogMsgId id, const char* t) { hardwareMsg.setLocalText(id, t); }
     const char* getLocalHardwareMessageText(AogMsgId id) const { return hardwareMsg.localText(id); }
     const char* getHardwareMessageText(AogMsgId id) const { return hardwareMsg.textFor(id); }
+    // Hauptschalter: aus = es geht keine Hardware-Meldung mehr raus (auch die Uhr nicht).
+    // Persistiert wird er mit saveLocalHardwareMessageTexts() (gleicher EEPROM-Block).
+    void setHardwareMessagesEnabled(bool on) { hardwareMsg.setEnabled(on); }
+    bool hardwareMessagesEnabled() const { return hardwareMsg.isEnabled(); }
     void saveLocalHardwareMessageTexts();
     
     // PGN handlers

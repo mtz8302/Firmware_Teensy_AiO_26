@@ -905,9 +905,13 @@ void FLASHMEM SimpleWebManager::handleHwMsgConfig(EthernetClient& client, const 
         if (!doc["bridge"].isNull())   { a->setLocalHardwareMessageText(AogMsgId::Bridge,   doc["bridge"]   | ""); }
         if (!doc["noCourse"].isNull()) { a->setLocalHardwareMessageText(AogMsgId::NoCourse, doc["noCourse"] | ""); }
         if (!doc["posJump"].isNull())  { a->setLocalHardwareMessageText(AogMsgId::PosJump,  doc["posJump"]  | ""); }
-        // Nur hier wird das EEPROM geschrieben (Block 1300, 104 Byte).
+        // Hauptschalter (kommt vom Slider als erstes Element der Seite). Er darf auch
+        // allein kommen - dann bleibt an den Texten alles, wie es ist.
+        if (!doc["enabled"].isNull())  { a->setHardwareMessagesEnabled(doc["enabled"].as<bool>()); }
+        // Nur hier wird das EEPROM geschrieben (Block 2000, Hauptschalter + Texte zusammen).
         a->saveLocalHardwareMessageTexts();
-        LOG_INFO(EventSource::NETWORK, "PGN221: lokale Meldungstexte gespeichert");
+        LOG_INFO(EventSource::NETWORK, "PGN221: lokale Meldungstexte gespeichert (aktiv=%d)",
+                 a->hardwareMessagesEnabled() ? 1 : 0);
         SimpleHTTPServer::sendJSON(client, "{\"status\":\"ok\"}");
         return;
     }
@@ -923,6 +927,7 @@ void FLASHMEM SimpleWebManager::handleHwMsgConfig(EthernetClient& client, const 
     doc["noCourse"] = a->getLocalHardwareMessageText(AogMsgId::NoCourse);
     doc["posJump"]  = a->getLocalHardwareMessageText(AogMsgId::PosJump);
     doc["lang"]     = static_cast<uint8_t>(currentLanguage);
+    doc["enabled"]  = a->hardwareMessagesEnabled();
     JsonObject act  = doc["active"].to<JsonObject>();
     act["weakFix"]  = a->getHardwareMessageText(AogMsgId::WeakFix);
     act["bridge"]   = a->getHardwareMessageText(AogMsgId::Bridge);

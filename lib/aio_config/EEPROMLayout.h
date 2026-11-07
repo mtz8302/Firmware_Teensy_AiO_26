@@ -97,7 +97,7 @@
 #define AOG_MSG_ADDR            2000
 #define AOG_MSG_SIZE            500    // reserviert; belegt sind sizeof(AogMsgBlob) = 200
 #define AOG_MSG_MAGIC           0xA0C1
-#define AOG_MSG_VER             2      // 2 = 48-Zeichen-Texte (VER 1 hatte 24)
+#define AOG_MSG_VER             3      // 3 = + Hauptschalter (2 = 48-Zeichen-Texte, 1 = 24)
 
 // --- Gemeinsamer Fahrzeug-Setup-Block: Kopf ------------------------------------
 // Aufbau (Little Endian, Teensy 4.1):

@@ -30,6 +30,7 @@ struct AogMsgBlob {
     uint16_t magic;
     uint8_t  ver;
     uint8_t  crc;
+    uint8_t  enabled;                    // 2026-11-06: Hauptschalter (0 = keine Meldungen)
     uint8_t  len[AOG_MSG_COUNT];
     char     text[AOG_MSG_COUNT][AOG_LOCAL_LEN];
 };
@@ -48,6 +49,7 @@ inline bool aogMsgStoreLoad(AogHwMsg& m) {
     EEPROM.get(AOG_MSG_ADDR, b);
     if ((b.magic != AOG_MSG_MAGIC) || (b.ver != AOG_MSG_VER)) { return false; }
     if (aogMsgBlobCrc(b) != b.crc) { return false; }
+    m.setEnabled(b.enabled != 0u);          // Hauptschalter mitladen
     for (uint8_t i = 0; i < AOG_MSG_COUNT; ++i) {
         if ((b.len[i] == 0u) || (b.len[i] >= AOG_LOCAL_LEN)) {
             m.setLocalText((AogMsgId)i, nullptr);      // leer -> EN
@@ -66,6 +68,7 @@ inline void aogMsgStoreSave(const AogHwMsg& m) {
     AogMsgBlob b{};
     b.magic = AOG_MSG_MAGIC;
     b.ver   = AOG_MSG_VER;
+    b.enabled = m.isEnabled() ? 1u : 0u;    // Hauptschalter mitspeichern
     for (uint8_t i = 0; i < AOG_MSG_COUNT; ++i) {
         const char* t = m.localText((AogMsgId)i);
         const size_t n = (t != nullptr) ? std::strlen(t) : 0u;

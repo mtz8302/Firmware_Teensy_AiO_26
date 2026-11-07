@@ -37,6 +37,28 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             margin-top: 5px;
             line-height: 1.3;
         }
+        /* Schalter-Zeile: die vier Regeln sind WOERTLICH aus TouchFriendlyDeviceSettingsPage.h
+           uebernommen (.toggle-switch/.toggle-slider selbst stehen in touch.css), damit der
+           Schalter genau wie dort aussieht und sitzt. */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        .toggle-container:last-child {
+            border-bottom: none;
+        }
+        .toggle-label {
+            font-size: 18px;
+            font-weight: 500;
+            flex: 1;
+            margin-right: 15px;
+        }
+        .toggle-info {
+            flex: 1;
+        }
         /* Ueberschrift INNERHALB einer Karte: dunkel, weil .card weiss ist */
         .section-title {
             font-size: 19px;
@@ -130,6 +152,21 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
         </div>
 
         <div id="status" class="status">loading...</div>
+
+        <div class="card">
+            <div class="toggle-container">
+                <div class="toggle-info">
+                    <label class="toggle-label" for="enabled">Hardware messages on</label>
+                    <div class="help-text">
+                        Show warnings and the clock in AgOpenGPS. Off = nothing is sent at all.
+                    </div>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="enabled" onchange="saveEnabled()">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
 
         <div class="card">
             <div class="section-title">Language</div>
@@ -226,8 +263,28 @@ function copyActive() {
     setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', null);
 }
 
+// Hauptschalter: wirkt sofort (nicht erst mit "Apply Changes"), weil er der
+// Ein/Aus-Schalter der ganzen Funktion ist. Wird gleich mit ins EEPROM geschrieben.
+function saveEnabled() {
+    const on = document.getElementById('enabled').checked;
+    setStatus(on ? 'Switching on...' : 'Switching off...', null);
+    fetch('/api/hwmsg/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: on })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.status === 'ok') {
+            setStatus(on ? 'Hardware messages are ON.' : 'Hardware messages are OFF.', 'success');
+        } else { setStatus('Error: ' + (j.message || 'unknown'), 'error'); }
+    }).catch(function (e) {
+        setStatus('Save failed: ' + e, 'error');
+    });
+}
+
 function load() {
     fetch('/api/hwmsg/config').then(function (r) { return r.json(); }).then(function (c) {
+        const en = document.getElementById('enabled');
+        if (en) { en.checked = (c.enabled !== false); }
         KEYS.forEach(function (k) {
             const el = document.getElementById(k);
             if (el) { el.value = c[k] || ''; }

@@ -19,6 +19,7 @@
 #include "VehicleSetupBlob.h"          // Schritt 4b: gemeinsamer Fahrzeug-Setup-Block
 #include "HeadingMonitor.h"
 #include "HeadingBridge.h"             // heading/roll fall-back (coast) module
+#include "GNSSProcessor.h"             // hasDualHeading/hasINS fuer die Meldungsfilterung
 #include "PositionHistory.h"           // the central per-fix ring (Step 1 of the migration)
 #include "PositionHistoryService.h"    // fills it once per fix - see that header
 #include "MotorDriverManager.h"
@@ -1701,18 +1702,28 @@ void AutosteerProcessor::saveLocalHardwareMessageTexts() {
 // die Anzeige bei jedem schlechten Epoch), ein EREIGNIS (Positionssprung) sofort. Abstaende
 // und Prioritaeten stehen im Katalog, damit sich Meldungen nicht gegenseitig verdraengen.
 void AutosteerProcessor::updateHardwareMessages() {
+    if (!hardwareMsg.isEnabled()) { return; }   // Hauptschalter aus (Web-UI)
     const uint32_t now = millis();
     if (hwMsgLastMs != 0u && (uint32_t)(now - hwMsgLastMs) < 100u) { return; }
     hwMsgLastMs = (now == 0u) ? 1u : now;
     const HeadingBridge::Status& st = headingBridge.getStatus();
+    // HARDWARE-ABHAENGIGKEIT (Betreiber-Frage 2026-11-06): die beiden Bridge-Meldungen setzen
+    // eine KOERPER-Lage voraus (Dual-Antenne oder INS). Ohne sie wird `attitudeTrusted` nie
+    // wahr und der Zustand bleibt laut Zustandsautomat fuer immer in BRIDGE/COAST - die
+    // Meldung wuerde dann STEHEND leuchten statt zu warnen. Sie werden deshalb nur gesendet,
+    // wenn eine Koerper-Lage existiert. Kurs-/Positionsmeldungen (NoCourse, PosJump) haengen
+    // nur an den Positionen und laufen auf jeder Hardware.
+    const GNSSProcessor::GNSSData& hwGnss = gnssProcessor.getData();
+    const bool haveAttitude = hwGnss.hasDualHeading || hwGnss.hasINS;
     if (!st.attitudeTrusted) { if (hwWeakT0 == 0u) { hwWeakT0 = now; } } else { hwWeakT0 = 0u; }
     const bool noCourse = (!st.pathChordValid && !st.travelWitnessValid && (st.speedFusedMps > 1.0f));
     if (noCourse) { if (hwNoCourseT0 == 0u) { hwNoCourseT0 = now; } } else { hwNoCourseT0 = 0u; }
     if (st.pathChordSpike) { (void)sendHardwareMessage(AogMsgId::PosJump); }
-    if ((st.state == HeadingBridge::State::BRIDGE) || (st.state == HeadingBridge::State::COAST)) {
+    if (haveAttitude &&
+        ((st.state == HeadingBridge::State::BRIDGE) || (st.state == HeadingBridge::State::COAST))) {
         (void)sendHardwareMessage(AogMsgId::Bridge);
     }
-    if ((hwWeakT0 != 0u) && ((uint32_t)(now - hwWeakT0) >= 2000u)) {
+    if (haveAttitude && (hwWeakT0 != 0u) && ((uint32_t)(now - hwWeakT0) >= 2000u)) {
         (void)sendHardwareMessage(AogMsgId::WeakFix);
     }
     if ((hwNoCourseT0 != 0u) && ((uint32_t)(now - hwNoCourseT0) >= 2000u)) {
