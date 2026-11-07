@@ -1385,6 +1385,12 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     float    reentryAgreeDeg   = 5.0f;   // Einigkeit mit der Projektion (0 = Bedingung aus)
     uint16_t liveGateRampMs     = 800;    // Rampe beim Oeffnen des Gates
     float    liveRampDegPerS   = 20.0f;  // maximale Nachfuehr-Geschwindigkeit der Rampe
+    // 2026-11-06f: die Rampe darf nie LANGSAMER sein als die Maschine dreht. Gemessen im Sim
+    // (Ref-Log t = 173,5...174,7 s): die Ausgabe kroch mit 20 Grad/s hinterher, waehrend der
+    // Knicklenker 70 Grad/s drehte - nach 9 Frames lag sie 65 Grad zurueck und holte das in
+    // 20-Grad-Spruengen auf. Mit diesem Faktor oeffnet die Rampe auf die GEMESSENE Lagrate
+    // (1,3 = 30 % Reserve fuer den Nachlauf).
+    float    liveRampFollowFac = 1.3f;
     // ---- Roll-Qualitaet -----------------------------------------------------------
     // uniPtchStdDevDeg ist das eigene 1-sigma des Baseline-Pitch = ROLL (die Baseline
     // liegt quer). Gemessen: 0,86...0,93 Grad bei gutem Empfang, 159 Grad bei schlechtem.

@@ -3361,7 +3361,13 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                 step = resid;                 // real change: pass it through
                 status.outSnapSrc = 1;
             } else {
-                if (big) { step = 0.0f; }     // unconfirmed: HOLD, no jump leaves the module
+                // 2026-11-06f: NICHT einfrieren (hier stand `if (big) { step = 0.0f; }`).
+                // Gemessen im Sim (Ref-Log): in einer gleichmaessigen Drehung verliert der Rest
+                // im 100-ms-Takt seine Bestaetigung und wurde dauerhaft auf 0 gesetzt - die
+                // Ausgabe STAND und holte danach in Spruengen auf (19 stehende Frames). Ein
+                // grosser unbestoetigter Rest wird jetzt auf die physikalisch moegliche Rate
+                // GEKLEMMT: die EMA-Stufe begrenzt ohnehin auf alpha*Rest, ein Sprung kann
+                // also nicht nach draussen, das Stehenbleiben ist aber weg.
                 // Secondary guard: never move the output faster than the machine can
                 // physically yaw. This binds the SMALL residuals (a wide bound cannot
                 // catch a spike - that is what the confirmation above is for).
@@ -3400,8 +3406,17 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // liveRampDegPerS begrenzt - die Projektion fuehrt in der Zwischenzeit weiter,
         // az_out faehrt rampenfrei nach.
         if (liveRampMsLeft > 0) {
-            const float maxRampStep = config.liveRampDegPerS *
-                                      ((dtS > 0.0f) ? dtS : 0.01f);
+            // 2026-11-06f: Die Rampe darf nie LANGSAMER sein als die Maschine dreht - sonst
+            // waechst der Rueckstand und wird spaeter als Sprung nachgeholt (gemessen im Sim,
+            // Ref-Log t = 173,5...174,7 s: 2,0 Grad je Frame Ausgabe gegen 7 Grad Ziel,
+            // 65 Grad Rueckstand, Aufloesung in 20-Grad-Spruengen). Sie oeffnet deshalb auf
+            // die GEMESSENE Lagrate.
+            float rampRate = config.liveRampDegPerS;
+            if (attRateValid) {
+                const float need = fabsf(attRateDegS) * config.liveRampFollowFac;
+                if (need > rampRate) { rampRate = need; }
+            }
+            const float maxRampStep = rampRate * ((dtS > 0.0f) ? dtS : 0.01f);
             if (fabsf(step) > maxRampStep) {
                 step = (step > 0.0f) ? maxRampStep : -maxRampStep;
                 status.outLimClip = 1;
