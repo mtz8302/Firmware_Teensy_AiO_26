@@ -598,6 +598,16 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // 75 Grad Knick = (L/2)/tan(37,5 Grad) = 0,60 m). Beim Schlepper ist v hoeher, damit
     // ist derselbe Deckel dort ebenfalls ausreichend.
     float    holdMinTurnRadiusM = 0.60f;
+    // 2026-11-06b (L2): Das Halten stand 34 von 142 Kurvenframes still. Zwei Ursachen, beide
+    // gemessen am Ref-Log knick_125_241 (t = 208...217 s, enge Wende bei 0,5...1,5 m/s):
+    //  1) die Lagrate springt im 100-ms-Takt zwischen -164 und +132 Grad/s (die Maschine dreht
+    //     dabei monoton durch 100 Grad) -> der Integrator hebt sich selbst auf.
+    //     Fix: EMA mit holdRateTauS.
+    //  2) der Deckel v/R_min+10 (60...70 Grad/s bei v < 0,8) VERWARF die Integration, statt sie
+    //     zu klemmen - und beim Knicklenker dreht der Vorderrahmen zusaetzlich (164 Grad/s bei
+    //     1,4 m/s, v/R_min ergaebe 138). Fix: klemmen statt verwerfen + Zuschlag.
+    float    holdRateTauS = 0.25f;        // Glaettung der Halte-Rate (0 = aus)
+    float    holdRateSlackDegS = 60.0f;   // Zuschlag fuer das Knickgelenk (Vorderrahmen)
     // --- 2026-11-06: Knickwinkel aus (Kurs - Lage) schaetzen --------------------------
     // Fuer Maschinen OHNE Lenkwinkel-Sensor (Knicklenker-Testmaeher): gamma = 2*atan((L/2)*
     // tan(cog - (att+Offset)) / d). Ergebnis geht als gamma/2 aufs Heading und als gamma in die

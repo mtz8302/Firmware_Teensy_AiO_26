@@ -2918,7 +2918,6 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // Hierarchie wie im ganzen Modul. Sie wird verworfen, wenn sie ein Sprung ist
     // (attJumped) oder unplausibel gross.
     static float lastDualHdgDeg = 0.0f;
-    static bool  lastDualHdgValid = false;
     bool attJumped = false;
     if (d.hasDualHeading && lastAttGateValid) {
         const float jumpDeg = fabsf(wrap180(d.dualHeading - lastAttGateDeg));
@@ -2954,7 +2953,6 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
             attRateValid = true;
         }
     }
-    lastDualHdgValid = d.hasDualHeading;
 
     // --- 2026-11-06: KNICKWINKEL AUS (Kurs - Lage) --------------------------------------
     // Fuer einen Punkt d vor der Vorderachse auf dem Vorderrahmen gilt rein geometrisch
@@ -3020,7 +3018,10 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // Modellrate vertrauenswuerdig (kein yawRateZeroed), langsam (|rate| <= holdRateMaxDegS,
     // sonst ist sie Rauschen), in Fahrt (v > 0.1) und NICHT rueckwaerts (das Modell rechnet
     // mit |v|, dort waere das Vorzeichen falsch). Sonst bleibt es beim HALTEN.
-    const bool keinKurs = (!status.pathChordValid && !status.travelWitnessValid);
+    // 2026-11-06b: `keinKurs` (kein Sehnen- und kein Witness-Kurs) entfaellt hier. Es war die
+    // Bedingung fuer das Weiterfuehren mit der MODELLRATE; seit L2 fuehrt der Halte-Block
+    // IMMER, und die Hierarchie steckt im Ratenwert selbst: gemessene Lagrate
+    // (attRateValid), sonst Modellrate mit ihrem engen Deckel holdRateMaxDegS.
     // 2026-11-06: EIGENER Integrator fuer das HALTEN. Vorher wurde `holdAz` jeden Frame aus
     // `status.azimuthDeg` neu gesetzt - das ist die bereits BEGRENZTE Ausgabe. Weil der
     // Halte-Zweig nicht in jedem Frame laeuft (die Zustaende flattern LIVE>BRIDGE>LIVE... und
@@ -3029,7 +3030,13 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     static float  s_holdAzInt   = 0.0f;
     static bool   s_holdAzValid = false;
     float holdAz = status.azimuthDeg;
-    if (!lageFuehrt) {
+    {
+        // 2026-11-06b: IMMER fuehren, nicht nur bei !lageFuehrt. Wird die Lage wieder vertraut,
+        // entscheidet die 1-s-QUELLENBESTAETIGUNG (sourceConfirmMs) - solange wird `use = 3`
+        // (halten) PUBLIZIERT, obwohl dieser Block nicht lief. holdAz war dann status.azimuthDeg,
+        // also der eingefrorene Ausgang selbst: die Ausgabe stand bis zu 1 s still, waehrend die
+        // Maschine weiterdrehte (gemessen im Sim, Ref-Log knick_125_241, t = 172,5...173,1 s:
+        // az_out konstant 57,20 Grad bei 60 Grad/s echter Drehung).
         // Neu aufgezogen wird nur, wenn die VORIGE Ausgabe aus einer echten Quelle kam
         // (Lage/Ring/Witness) - dann startet der Halt sprungfrei von der Ausgabe.
         if (!s_holdAzValid || (status.azSrc != 3u)) { s_holdAzInt = status.azimuthDeg; s_holdAzValid = true; }
@@ -3037,21 +3044,39 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // (der VWAS urteilt erst ab 0,8 m/s), die Rate aber physikalisch klein. Der
         // BETRAG ist die Sicherung (holdRateMaxDegS), nicht das Qualitaetsurteil.
         const float rateModel = modelRateRawDegS;
-        const float rateHold  = attRateValid ? attRateDegS : rateModel;
+        float rateHold = attRateValid ? attRateDegS : rateModel;
+        // 2026-11-06b: VORZEICHEN-ALTERNANZ daempfen. Gemessen (knick_125_241, t = 208...217 s,
+        // enge Wende bei 0,5...1,5 m/s): die Lagrate springt im 100-ms-Takt zwischen -164 und
+        // +132 Grad/s, waehrend die Maschine monoton durch 100 Grad dreht - der Integrator hebt
+        // sich damit selbst auf, die Ausgabe steht (34 von 142 Halten-Kurvenframes).
+        if (config.holdRateTauS > 0.0f) {
+            static float s_holdRateFilt = 0.0f;
+            float aF = dtS / (config.holdRateTauS + dtS);
+            if (aF > 1.0f) { aF = 1.0f; }
+            s_holdRateFilt += (rateHold - s_holdRateFilt) * aF;
+            rateHold = s_holdRateFilt;
+        }
         // L1 (2026-11-06): Obergrenze PHYSIKALISCH - keine Maschine dreht schneller als
         // v / R_min. (Testmaeher: R_min 0,6 m -> bei 1 m/s sind das 95 Grad/s; der alte
         // Deckel holdRateMaxDegS = 3 Grad/s haette das Weiterfuehren sofort gesperrt und
         // genau damit die Ausgabe in der Wende eingefroren.) Die Modellrate behaelt den
         // alten, engen Deckel: sie ist ein Zustand, keine Messung.
+        // L2 (2026-11-06b): KNICKLENKER - der Vorderrahmen dreht beim Einschlag ZUSAETZLICH
+        // (gemessen bis 164 Grad/s bei 1,4 m/s, v/R_min ergaebe nur 138), daher der Zuschlag
+        // holdRateSlackDegS. Und der Deckel wird GEKLEMMT statt die Integration zu VERWERFEN:
+        // verworfen hiess "Ausgabe steht" (gemessen 20 der 34 stehenden Frames: Rate 100...164
+        // gegen Deckel 60...70 bei v < 0,8).
         const float rateCap = attRateValid
-                            ? (speedMps / config.holdMinTurnRadiusM * 57.29578f + 10.0f)
+                            ? (speedMps / config.holdMinTurnRadiusM * 57.29578f +
+                               config.holdRateSlackDegS)
                             : config.holdRateMaxDegS;
-        if (!status.reverseDirection && (speedMps > 0.1f) && (fabsf(rateHold) <= rateCap)) {
-            s_holdAzInt = wrap360(s_holdAzInt + rateHold * dtS);
+        if (!status.reverseDirection && (speedMps > 0.1f)) {
+            float rUse = rateHold;
+            if (rUse >  rateCap) { rUse =  rateCap; }
+            if (rUse < -rateCap) { rUse = -rateCap; }
+            s_holdAzInt = wrap360(s_holdAzInt + rUse * dtS);
         }
         holdAz = s_holdAzInt;
-    } else {
-        s_holdAzValid = false;   // naechster Halt beginnt wieder von der aktuellen Ausgabe
     }
     // --- 1-s-BESTAETIGUNG der Quelle (2026-10-18, Betreiber) -------------------------
     // Kandidat wie bisher; uebernommen wird er erst, wenn er sourceConfirmMs lang
