@@ -71,17 +71,19 @@
 #define VEHICLE_SETUP_ADDR      1500
 #define VEHICLE_SETUP_SIZE      256
 
-// --- 1300-1399: LOKALE TEXTE der AOG-Hardware-Meldungen (PGN 221) --- 2026-11-06
+// --- 1300-1499: LOKALE TEXTE der AOG-Hardware-Meldungen (PGN 221) --- 2026-11-06
 // EN und DE sind im Flash kompiliert und kosten KEINEN EEPROM. Hier liegt nur, was der
 // Bediener im Web-UI selbst eintippt (Sprache "LOCAL"); ein leerer Eintrag faellt auf EN
-// zurueck. Aufbau (siehe aog_hwmsg_store.h): magic(2) ver(1) crc(1) len[4] text[4][24].
-// Aufwand: 104 Byte von 4284 - und geschrieben wird NUR beim Speichern im Web-UI
-// (Teensy-EEPROM ist flash-emuliert: ein write kopiert einen ganzen 4-kB-Sektor um).
+// zurueck. Aufbau (siehe aog_hwmsg_store.h): magic(2) ver(1) crc(1) len[4] text[4][48].
+// Aufwand: 200 Byte - der Block ist damit VOLL (bei 1500 beginnt der Fahrzeug-Setup-Block).
+// Geschrieben wird NUR beim Speichern im Web-UI (Teensy-EEPROM ist flash-emuliert:
+// ein write kopiert einen ganzen 4-kB-Sektor um).
 // ACHTUNG: EEPROM_VERSION dafuer NICHT erhoehen - ein Bump loescht alle Config-Bloecke.
+// VER 2 = 48-Zeichen-Texte (VER 1 hatte 24 Zeichen; ein alter Block wird verworfen).
 #define AOG_MSG_ADDR            1300
-#define AOG_MSG_SIZE            104    // sizeof(AogMsgBlob), per static_assert geprueft
+#define AOG_MSG_SIZE            200    // sizeof(AogMsgBlob), per static_assert geprueft
 #define AOG_MSG_MAGIC           0xA0C1
-#define AOG_MSG_VER             1
+#define AOG_MSG_VER             2
 
 // --- Gemeinsamer Fahrzeug-Setup-Block: Kopf ------------------------------------
 // Aufbau (Little Endian, Teensy 4.1):

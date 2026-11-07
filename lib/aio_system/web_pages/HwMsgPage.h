@@ -151,29 +151,29 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
 
             <div class="msg-row">
                 <div class="msg-head">Weak GNSS fix <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
-                <input type="text" id="weakFix" maxlength="23" placeholder="Weak GNSS fix">
+                <input type="text" id="weakFix" maxlength="47" placeholder="Weak GNSS fix">
                 <div class="active-line">active now: <span id="act_weakFix">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">Poor GNSS heading quality <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
-                <input type="text" id="bridge" maxlength="23" placeholder="poor GNSS Heading quality">
+                <input type="text" id="bridge" maxlength="47" placeholder="poor GNSS Heading quality">
                 <div class="active-line">active now: <span id="act_bridge">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">No course, heading holds <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
-                <input type="text" id="noCourse" maxlength="23" placeholder="No course - hold">
+                <input type="text" id="noCourse" maxlength="47" placeholder="No course - hold">
                 <div class="active-line">active now: <span id="act_noCourse">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">Position jump <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
-                <input type="text" id="posJump" maxlength="23" placeholder="Position jump">
+                <input type="text" id="posJump" maxlength="47" placeholder="Position jump">
                 <div class="active-line">active now: <span id="act_posJump">-</span></div>
             </div>
 
             <div class="help-text" style="margin-top: 10px;">
                 The fields hold the <b>local</b> texts only (they go out when the language is
                 "Local"). "active now" shows what AgOpenGPS gets with the language above.
-                Max. 23 characters each; written to the EEPROM only when you apply.
+                Max. 47 characters each; written to the EEPROM only when you apply.
             </div>
             <div style="margin-top: 12px;">
                 <button type="button" class="touch-button" style="background: #7f8c8d; padding: 14px 18px; font-size: 16px;"
@@ -217,7 +217,7 @@ function setActiveTexts(active, lang) {
 function copyActive() {
     KEYS.forEach(function (k) {
         const el = document.getElementById(k);
-        if (el && CURRENT_ACTIVE[k]) { el.value = CURRENT_ACTIVE[k].substring(0, 23); }
+        if (el && CURRENT_ACTIVE[k]) { el.value = CURRENT_ACTIVE[k].substring(0, 47); }
     });
     setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', true);
 }

@@ -41,7 +41,10 @@ enum class AogMsgId : uint8_t {
 };
 
 static constexpr uint8_t AOG_MSG_COUNT     = (uint8_t)AogMsgId::Count;
-static constexpr uint8_t AOG_LOCAL_LEN     = 24;   // inkl. Nullterminator; AOG-Label fasst ~50
+// 2026-11-06: 24 -> 48. Der Deckel war zu knapp: das AOG-Label ist 888 px breit bei
+// Tahoma 20,25 fett und zeigt ~50 Zeichen, der deutsche No-Course-Text hat 43. Mit 24
+// wurde er beim Uebernehmen in die LOCAL-Felder abgeschnitten.
+static constexpr uint8_t AOG_LOCAL_LEN     = 48;   // inkl. Nullterminator (47 Zeichen)
 static constexpr uint8_t AOG_MSG_MAX_BYTES = 48;   // harte Grenze je Meldung (UTF-8-Bytes)
 
 struct AogMsgDef {
@@ -56,8 +59,8 @@ inline const AogMsgDef& aogMsgDef(AogMsgId id) {
     static const AogMsgDef k[(int)AogMsgId::Count] = {
         //  EN-Text                 DE-Text                  s  Farbe Prio  Abstand
         { { "Weak GNSS fix",     "Empfang schwach"      }, 5, 0, 2, 15000u },  // Warnung
-        { { "Heading: bridge",   "Kurs: Bruecke"        }, 5, 1, 1, 20000u },  // Hinweis
-        { { "No course - hold",  "Kein Kurs - halten"   }, 5, 1, 1, 20000u },  // Hinweis
+        { { "poor GNSS Heading quality",   "Empfang Fahrtrichtung ungenau"        }, 5, 1, 1, 20000u },  // Hinweis
+        { { "No course - hold",  "Keine Fahrtrichtung bestimmbar: Kurs halten"   }, 5, 1, 1, 20000u },  // Hinweis
         { { "Position jump",     "Positionssprung"      }, 5, 0, 3, 10000u },  // Warnung
     };
     return k[(int)id];
