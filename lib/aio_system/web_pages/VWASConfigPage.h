@@ -56,16 +56,10 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="section">
-    <h3>Live status</h3>
-    <div id="liveStatus" class="status-box">loading...</div>
-  </div>
-
-  <div class="section">
     <h3>Import from AgOpenGPS</h3>
-    <div class="hint">Pick <code>vehicle.xml</code> from <code>Documents\AgOpenGPS\Vehicles\...</code>.
-      Nothing is written into the fields - each value is offered below its field
-      (<i>from XML: ...</i>, highlighted when it differs) and only reaches the board
-      when you press <b>Save</b>.</div>
+    <div class="hint">Pick <code>vehicle.xml</code> (<code>Documents\AgOpenGPS\Vehicles\...</code>).
+      Nothing is written automatically: each value is <i>offered</i> under its field
+      (<i>from XML: ...</i>, highlighted when it differs) and only reaches the board with <b>Save</b>.</div>
     <input type="file" id="vehicleXmlFile" accept=".xml">
     <button class="btn btn-secondary" onclick="applyAllXml()">Apply all XML values</button>
     <button class="btn btn-secondary" onclick="discardXml()">Discard</button>
@@ -102,19 +96,13 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         <div class="hint" id="gainInfo">-</div>
       </div>
     </div>
-    <div class="hint"><b>Articulated:</b> enter the FULL joint angle - AgOpenGPS halves it
-      itself. A joint beyond <code>1.2 &times;</code> this value is rejected and the output is
-      clamped to &plusmn;this value, so too small here drops every tight turn
-      (measured 01.11.: 37 entered, real 75).</div>
-    <div class="hint"><b>Antenna ahead of pivot:</b> distance from the pivot to the antenna,
-      positive forward. Pivot is the <b>rear axle</b> on a tractor, the <b>joint</b> on an
-      articulated machine. The value that counts is the one AgOpenGPS's <b>main screen</b>
-      draws correctly - its configuration drawing uses the rear axle as origin and is
-      misleading for articulated. 0 = no lead correction.</div>
-    <div class="hint"><b>Side hill gain:</b> magnitude only, identical to AOG's slider.
-      The firmware derives the sign itself - the roll it reports is inverted relative to
-      AOG. Needed so the zero-point trim does not read the roll effect on a slope as a
-      zero error.</div>
+    <div class="hint"><b>Articulated:</b> enter the FULL joint angle - AOG halves it itself.
+      Too small drops every tight turn (measured 01.11.: 37 entered, real 75).</div>
+    <div class="hint"><b>Antenna ahead of pivot:</b> positive forward. Pivot is the <b>rear axle</b>
+      (tractor) or the <b>joint</b> (articulated). Use the value AOG's <b>main screen</b> draws
+      correctly - its configuration drawing is misleading for articulated. 0 = no lead.</div>
+    <div class="hint"><b>Side hill gain:</b> magnitude only, as AOG's slider (0.12...0.15).
+      The firmware derives the sign itself.</div>
     <button class="btn btn-primary" onclick="saveConfig()">Save vehicle geometry</button>
     <div id="saveResult" class="hint"></div>
   </div>
@@ -138,16 +126,13 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         <div class="xmlval" id="xml_headingOffsetDeg" onclick="applyXml('headingOffsetDeg')"></div>
       </div>
     </div>
-    <div class="hint"><b>Antenna spacing:</b> the mechanical distance between the two antenna
-      phase centres. It is the <b>reference</b> for the plausibility test of the solved
-      baseline: a length far off it means the heading solution is not trustworthy and is
-      dropped. <b>Measured: 71.1 cm</b> (15 drives, 13 065 RTK frames). Without an entry
-      this build value applies. <b>0 = test off</b>, the reference is learned again (the
-      fragile old path - escape hatch only).</div>
-    <div class="hint"><b>Dual heading offset:</b> the angle between the antenna baseline and
-      the vehicle's longitudinal axis, with AOG's sign. <b>Measured: 88.3&deg;</b> (straight
-      driving, 3 drives, 520 samples, sd 0.9&deg;). A generic 90 costs 1.7&deg; in <b>every</b>
-      frame. Enter the same value in AgOpenGPS.</div>
+    <div class="hint"><b>Antenna spacing:</b> distance between the two antenna phase centres.
+      It is the <b>reference</b> that catches an untrustworthy heading solution.
+      <b>Measured: 71.1 cm</b> (15 drives, 13 065 RTK frames). <b>0 = test off</b>
+      (reference is learned - escape hatch only).</div>
+    <div class="hint"><b>Dual heading offset:</b> angle between antenna baseline and vehicle axis,
+      AOG's sign, <b>-100...+100</b>. <b>Measured: 88.3&deg;</b>. A generic 90 costs 1.7&deg; in
+      <b>every</b> frame. Enter the same value in AgOpenGPS.</div>
     <button class="btn btn-primary" onclick="saveGeometry()">Save antenna geometry</button>
     <button class="btn btn-secondary" onclick="reloadAll()">Reload from device</button>
     <button class="btn btn-secondary" onclick="useMeasuredRef()">Use measured length as reference</button>
@@ -155,9 +140,86 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <div id="geometryResult" class="hint">-</div>
   </div>
 
+  <div class="section">
+    <h3>Live status</h3>
+    <div id="liveStatus" class="status-box">loading...</div>
+  </div>
+
 </div>
 
 <script>
+// --- Plausibilitaet (2026-11-06, Betreiber) ---------------------------------
+// Die Grenzen BLOCKIEREN nicht - sie fragen nach. Eine Maschine darf untypisch sein;
+// ein Tippfehler (0.92 statt 92, also Meter statt cm) soll aber auffallen.
+// AOGs eigene Maske erlaubt beim Dual-Heading-Offset -100 ... +100 Grad
+// (FormConfig.Designer.cs: Minimum = -100, Maximum = WinForms-Default 100, der Keypad
+// erzwingt Min/Max). 270 ist rechnerisch gleich -90 (AOG addiert den Offset und wickelt
+// die Summe auf 0...360), laesst sich dort aber nicht eintragen.
+function wrap180(a) { while (a > 180) { a -= 360; } while (a < -180) { a += 360; } return a; }
+function numOrNaN(id) {
+  const v = parseFloat(document.getElementById(id).value);
+  return (typeof v === 'number' && isFinite(v)) ? v : NaN;
+}
+
+function plausibilityWarnings(keys) {
+  const w = [];
+  const has = function (k) { return keys.indexOf(k) >= 0; };
+  if (has('wheelbase')) {
+    const wb = numOrNaN('wheelbase');
+    if (isFinite(wb)) {
+      if (wb < 10) { w.push('Wheelbase ' + wb + ' cm - that looks like METRES typed by mistake.'); }
+      else if (wb < 150) { w.push('Wheelbase ' + wb + ' cm is short (typical > 150 cm).'); }
+      else if (wb > 600) { w.push('Wheelbase ' + wb + ' cm is long (typical < 600 cm).'); }
+    }
+  }
+  if (has('antennaPivotM')) {
+    const ap = numOrNaN('antennaPivotM');
+    if (isFinite(ap) && ap !== 0) {
+      if (ap < 10) { w.push('Antenna ahead of pivot ' + ap + ' cm - that looks like METRES typed by mistake.'); }
+      else if (ap < 100) { w.push('Antenna ahead of pivot ' + ap + ' cm is short (typical > 100 cm).'); }
+      else if (ap > 300) { w.push('Antenna ahead of pivot ' + ap + ' cm is far ahead (typical < 300 cm).'); }
+    }
+  }
+  if (has('baselineMeters')) {
+    const bs = numOrNaN('baselineMeters');
+    if (isFinite(bs) && bs !== 0) {
+      if (bs < 5) { w.push('Antenna spacing ' + bs + ' cm - that looks like METRES typed by mistake.'); }
+      else if (bs < 70) { w.push('Antenna spacing ' + bs + ' cm is short (typical > 70 cm, measured 71.1 cm).'); }
+      else if (bs > 200) { w.push('Antenna spacing ' + bs + ' cm is wide (typical < 200 cm).'); }
+    }
+  }
+  if (has('maxSteeringAngle')) {
+    const sa = numOrNaN('maxSteeringAngle');
+    if (isFinite(sa) && (sa < 20 || sa > 80)) {
+      w.push('Steering / joint angle ' + sa + ' deg outside 20...80 (articulated: enter the FULL joint angle).');
+    }
+  }
+  if (has('sideHillGain')) {
+    const sh = numOrNaN('sideHillGain');
+    if (isFinite(sh) && (sh < 0 || sh > 1)) {
+      w.push('Side hill gain ' + sh + ' outside 0...1 (AOG slider is 0.12...0.15).');
+    }
+  }
+  if (has('headingOffsetDeg')) {
+    const ho = numOrNaN('headingOffsetDeg');
+    if (isFinite(ho)) {
+      const near90 = (Math.abs(wrap180(ho - 90)) <= 10) || (Math.abs(wrap180(ho + 90)) <= 10);
+      if (Math.abs(ho) > 100) {
+        w.push('Dual heading offset ' + ho + ' deg - AgOpenGPS only accepts -100...+100; enter the equivalent value there (270 equals -90).');
+      } else if (!near90) {
+        w.push('Dual heading offset ' + ho + ' deg is not near +/-90 (measured 88.3).');
+      }
+    }
+  }
+  return w;
+}
+
+function confirmPlausibility(keys) {
+  const w = plausibilityWarnings(keys);
+  if (w.length === 0) { return true; }
+  return confirm('Please check these values:\n\n- ' + w.join('\n- ') + '\n\nSave anyway?');
+}
+
 function loadConfig() {
   fetch('/api/vwas/config').then(r => r.json()).then(cfg => {
     // API in METERN, Feld in CM (siehe LEN_CM oben).
@@ -198,6 +260,7 @@ function gainInfo(cfg) {
 }
 
 function saveConfig() {
+  if (!confirmPlausibility(['wheelbase', 'antennaPivotM', 'maxSteeringAngle', 'sideHillGain'])) { return; }
   const body = {
     // Felder in CM -> API in METERN.
     wheelbase: fromField('wheelbase', parseFloat(document.getElementById('wheelbase').value)),
@@ -441,6 +504,7 @@ function loadGeometry() {
 }
 
 function saveGeometry() {
+  if (!confirmPlausibility(['baselineMeters', 'headingOffsetDeg'])) { return; }
   const body = {};
   const rawM = document.getElementById('baselineMeters').value.trim();
   if (rawM !== '') {
