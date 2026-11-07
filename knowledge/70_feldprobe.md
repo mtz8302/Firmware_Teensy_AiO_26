@@ -197,16 +197,25 @@ Alles andere (Zaun, Trim, Latenz) ist heute nicht dran — nicht ueberladen.
 1. [ ] Flashen. **WARNUNG**: die Defaults sind jetzt **Traktor** (Radstand **2,50 m**, Typ 0,
    40 Grad, Offset 90) — nicht mehr die Maschine. Ohne die Werte unten rechnet die Firmware
    die Kruemmung **2,7-fach falsch**.
-2. [ ] `/vwas` oeffnen. **Die Seite MUSS jetzt laden** (vorher 503). Wenn sie leer bleibt, ist
+2. [ ] **ZUERST die Basislinie** (B10.91!): die Maschine lief am 11-07 in **76 % der Frames
+   im gedrosselten Zweig** (`att_q = 1`), weil die Basislinien-Referenz nicht zur geloesten
+   Laenge passte. Die Referenz steht im Boot-Log: `physicalBaselineM: ... using the built-in
+   default 0.711 m`. Auf der Bruecken-Geometrie-Seite die **gemessene** Laenge eintragen
+   (11-07 geloest: **0,83 m**) oder **0 = lernen**. Danach im Log pruefen:
+   `|baseline_dev_pct| < 5 %` und `att_q = 0` — **sonst sind alle anderen Zahlen hier
+   Messwerte aus dem gedrosselten Zweig und nicht zu gebrauchen.**
+
+3. [ ] `/vwas` oeffnen. **Die Seite MUSS jetzt laden** (vorher 503). Wenn sie leer bleibt, ist
    die Reparatur nicht im Binary → nicht weiterfahren, Firmware-Stand pruefen.
-3. [ ] Eintragen und **speichern**: Radstand **0,92** · Antenne vor Achse **0,41** ·
+4. [ ] Eintragen und **speichern**: Radstand **0,92** · Antenne vor Achse **0,41** ·
    halber Radstand **0,84** · Typ **2 (Knicklenker)** · max. Lenkwinkel **75** ·
    Dual-Offset **88,3**. Danach **Seite neu laden** und pruefen, ob die Werte stehen
    geblieben sind (das war der eigentliche Fehler: nichts liess sich speichern).
-4. [ ] Einmal **Strom aus/ein**. Werte muessen aus dem EEPROM zurueckkommen.
-5. [ ] Log starten (seriell, `AIO_HR_LOG`), **10 s Stillstand** als Referenzblock.
+5. [ ] Einmal **Strom aus/ein**. Werte muessen aus dem EEPROM zurueckkommen.
+6. [ ] Log starten (seriell, `AIO_HR_LOG`), **10 s Stillstand** als Referenzblock.
 
 ### 10.2 Was fahren (kurz halten, 6 Minuten)
+
 | # | Manoever | Dauer | Was es beweist |
 |---|---|---|---|
 | A | Stillstand, Raeder gerade | 20 s | `veh_type=2`, `wq=0` (nicht 100), `az_out` ≈ 0 |
