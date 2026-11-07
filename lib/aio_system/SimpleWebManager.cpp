@@ -258,6 +258,14 @@ void SimpleWebManager::applyLanguageToModules() {
     }
 }
 
+// 2026-11-06: Ziel nach einem Sprachwechsel. Es wird nur ein fester Seitenname
+// ausgewertet (keine freie URL - eine offene Umleitung waere ein Einfallstor).
+// Ohne Parameter bleibt es bei der Startseite, wie bisher.
+static const char* langRedirectTarget(const String& query) {
+    if (query.indexOf("back=hwmsg") >= 0) { return "/hwmsg"; }
+    return "/";
+}
+
 void FLASHMEM SimpleWebManager::setupRoutes() {
     // Home page - now using touch-friendly interface
     httpServer.on("/", [this](EthernetClient& client, const String& method, const String& query) {
@@ -332,14 +340,17 @@ void FLASHMEM SimpleWebManager::setupRoutes() {
     // WAS Demo page removed - using WebSocket telemetry instead
     
     // Language selection
+    // Ziel nach dem Umschalten: die Seite, die den Wechsel angefordert hat. Vorher stand hier
+    // fest "/" - der Bediener landete auf der Startseite und musste zurueckklicken (gemeldet
+    // 2026-11-06). Es wird nur ein fester Name ausgewertet, keine freie URL.
     httpServer.on("/lang/en", [this](EthernetClient& client, const String& method, const String& query) {
         setLanguage(WebLanguage::ENGLISH);
-        SimpleHTTPServer::redirect(client, "/");
+        SimpleHTTPServer::redirect(client, langRedirectTarget(query));
     });
     
     httpServer.on("/lang/de", [this](EthernetClient& client, const String& method, const String& query) {
         setLanguage(WebLanguage::GERMAN);
-        SimpleHTTPServer::redirect(client, "/");
+        SimpleHTTPServer::redirect(client, langRedirectTarget(query));
     });
 
     // LOCAL (2026-11-06): dritte Sprache - die Texte der AOG-Hardware-Meldungen (PGN 221)
@@ -347,7 +358,7 @@ void FLASHMEM SimpleWebManager::setupRoutes() {
     // weil alle Texte dort auf "== GERMAN ? ... : ..." pruefen.
     httpServer.on("/lang/local", [this](EthernetClient& client, const String& method, const String& query) {
         setLanguage(WebLanguage::LOCAL);
-        SimpleHTTPServer::redirect(client, "/");
+        SimpleHTTPServer::redirect(client, langRedirectTarget(query));
     });
 
     // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
@@ -901,13 +912,22 @@ void FLASHMEM SimpleWebManager::handleHwMsgConfig(EthernetClient& client, const 
         return;
     }
 
-    // GET: die lokalen Texte und die aktive Sprache
+    // GET: die lokalen Texte, die AKTIVEN Texte und die aktive Sprache.
+    // Die aktiven Texte sind wichtig (Betreiber-Befund 2026-11-06): nach dem Umschalten auf
+    // Deutsch blieben die Eingabefelder leer, weil sie die LOCAL-Texte zeigen - der Bediener
+    // sah nicht, dass sehr wohl deutsche Texte gesendet werden. "active" zeigt genau das,
+    // was jetzt nach AgOpenGPS geht (Rueckfallkette inklusive).
     JsonDocument doc;
     doc["weakFix"]  = a->getLocalHardwareMessageText(AogMsgId::WeakFix);
     doc["bridge"]   = a->getLocalHardwareMessageText(AogMsgId::Bridge);
     doc["noCourse"] = a->getLocalHardwareMessageText(AogMsgId::NoCourse);
     doc["posJump"]  = a->getLocalHardwareMessageText(AogMsgId::PosJump);
     doc["lang"]     = static_cast<uint8_t>(currentLanguage);
+    JsonObject act  = doc["active"].to<JsonObject>();
+    act["weakFix"]  = a->getHardwareMessageText(AogMsgId::WeakFix);
+    act["bridge"]   = a->getHardwareMessageText(AogMsgId::Bridge);
+    act["noCourse"] = a->getHardwareMessageText(AogMsgId::NoCourse);
+    act["posJump"]  = a->getHardwareMessageText(AogMsgId::PosJump);
     String json;
     serializeJson(doc, json);
     SimpleHTTPServer::sendJSON(client, json);

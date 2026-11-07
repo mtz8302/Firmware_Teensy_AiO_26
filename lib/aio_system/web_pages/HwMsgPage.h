@@ -84,6 +84,17 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             font-weight: 400;
             color: #7f8c8d;
         }
+        /* Zeigt, was JETZT nach AgOpenGPS geht - die Felder darueber enthalten nur die
+           LOCAL-Texte. Ohne diese Zeile sah es nach dem Sprachwechsel so aus, als waere
+           nichts umgestellt (Betreiber-Befund 2026-11-06). */
+        .active-line {
+            font-size: 14px;
+            color: #2c3e50;
+            margin-top: 5px;
+        }
+        .active-line span {
+            font-weight: 600;
+        }
         .msg-row input[type=text] {
             width: 100%;
             box-sizing: border-box;
@@ -121,9 +132,9 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
         <div class="card">
             <div class="section-title">Language</div>
             <div class="lang-row">
-                <a class="lang-btn" data-lang="0" href="/lang/en">English</a>
-                <a class="lang-btn" data-lang="1" href="/lang/de">Deutsch</a>
-                <a class="lang-btn" data-lang="2" href="/lang/local">Local</a>
+                <a class="lang-btn" data-lang="0" href="/lang/en?back=hwmsg">English</a>
+                <a class="lang-btn" data-lang="1" href="/lang/de?back=hwmsg">Deutsch</a>
+                <a class="lang-btn" data-lang="2" href="/lang/local?back=hwmsg">Local</a>
             </div>
             <div class="help-text">
                 "Local" uses the texts below. The web interface itself stays in English.
@@ -141,28 +152,42 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             <div class="msg-row">
                 <div class="msg-head">Weak GNSS fix <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
                 <input type="text" id="weakFix" maxlength="23" placeholder="Weak GNSS fix">
+                <div class="active-line">active now: <span id="act_weakFix">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">Poor GNSS heading quality <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
                 <input type="text" id="bridge" maxlength="23" placeholder="poor GNSS Heading quality">
+                <div class="active-line">active now: <span id="act_bridge">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">No course, heading holds <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
                 <input type="text" id="noCourse" maxlength="23" placeholder="No course - hold">
+                <div class="active-line">active now: <span id="act_noCourse">-</span></div>
             </div>
             <div class="msg-row">
                 <div class="msg-head">Position jump <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
                 <input type="text" id="posJump" maxlength="23" placeholder="Position jump">
+                <div class="active-line">active now: <span id="act_posJump">-</span></div>
             </div>
 
             <div class="help-text" style="margin-top: 10px;">
-                Max. 23 characters each. Stored in the EEPROM and written only when you apply.
+                The fields hold the <b>local</b> texts only (they go out when the language is
+                "Local"). "active now" shows what AgOpenGPS gets with the language above.
+                Max. 23 characters each; written to the EEPROM only when you apply.
+            </div>
+            <div style="margin-top: 12px;">
+                <button type="button" class="touch-button" style="background: #7f8c8d; padding: 14px 18px; font-size: 16px;"
+                        onclick="copyActive()">
+                    Copy the active texts into the fields
+                </button>
             </div>
         </div>
     </div>
 
 <script>
 const KEYS = ['weakFix', 'bridge', 'noCourse', 'posJump'];
+let CURRENT_ACTIVE = {};
+const LANG_NAME = ['English', 'Deutsch', 'Local'];
 
 function setStatus(text, ok) {
     const el = document.getElementById('status');
@@ -176,6 +201,27 @@ function setLangActive(lang) {
     });
 }
 
+// "active now": der Text, der mit der eingestellten Sprache WIRKLICH rausgeht.
+function setActiveTexts(active, lang) {
+    CURRENT_ACTIVE = active || {};
+    KEYS.forEach(function (k) {
+        const el = document.getElementById('act_' + k);
+        if (el) { el.innerText = CURRENT_ACTIVE[k] || '-'; }
+    });
+    const name = LANG_NAME[Number(lang)];
+    if (name) { setStatus('Language: ' + name + ' - the texts above are what AgOpenGPS shows.', true); }
+}
+
+// Die aktiven Texte in die Felder uebernehmen, damit man sie abwandeln kann
+// (z. B. Deutsch -> eigener Dialekt). Gespeichert wird erst mit "Apply Changes".
+function copyActive() {
+    KEYS.forEach(function (k) {
+        const el = document.getElementById(k);
+        if (el && CURRENT_ACTIVE[k]) { el.value = CURRENT_ACTIVE[k].substring(0, 23); }
+    });
+    setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', true);
+}
+
 function load() {
     fetch('/api/hwmsg/config').then(function (r) { return r.json(); }).then(function (c) {
         KEYS.forEach(function (k) {
@@ -183,7 +229,7 @@ function load() {
             if (el) { el.value = c[k] || ''; }
         });
         setLangActive(c.lang);
-        setStatus('Ready.', true);
+        setActiveTexts(c.active, c.lang);
     }).catch(function (e) {
         // Sichtbar scheitern: ein stiller Fehler sieht aus wie "nichts gespeichert".
         setStatus('Could not load: ' + e, false);
@@ -199,8 +245,12 @@ function save() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j.status === 'ok') { setStatus('Saved. The new texts are active now.', true); }
-        else { setStatus('Error: ' + (j.message || 'unknown'), false); }
+        if (j.status === 'ok') {
+            // Nach dem Speichern die aktiven Texte neu holen: bei Sprache "Local" aendert
+            // sich damit auch die Anzeige "active now".
+            setStatus('Saved. The new texts are active now.', true);
+            load();
+        } else { setStatus('Error: ' + (j.message || 'unknown'), false); }
     }).catch(function (e) {
         setStatus('Save failed: ' + e, false);
     });
