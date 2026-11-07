@@ -143,8 +143,13 @@ die Schwellen nachziehen.
   Basislinie zu verrauscht: Kreuzkorrelation flach bei r = 0,02…0,13; ohne Signalschwelle setzt
   Rauschen den Quotienten). **1,30 nicht wieder einfuehren** ohne eine Messung mit Signalschwelle,
   Drehsinn-Pruefung und beiden Wahrheiten.
-8. **Aus frueheren Sitzungen weiter offen**: 1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik
-   aufraeumen (`outSnapConfirmMs` seit B10.77 fast wirkungslos).
+8. **GESCHLOSSEN 2026-11-07: `outSnapConfirmMs` war wirkungslos** (B10.88). Die Karenz mass die Zeit
+   ab dem laufenden Frame statt ab dem Beginn der Bestaetigung und war bei 10 Hz sofort erfuellt.
+   Jetzt haelt der Zweig wieder einen Frame, ein echter Sprung verzoegert sich um genau einen
+   Bestaetigungsframe. **Im Sim neutral** (403 -> 401 Spruenge > 3 Grad), weil der Referenz-Log
+   eine saubere RTK-Fahrt ist; die Wirkung ist auf einem Log mit gestoerter Lage zu zeigen.
+   Offen bleibt: 1.2a/1.2b (`attPathTol`) nicht gebaut.
+
 9. **Sim-Repo-Hygiene**: erledigt 2026-11-07 (115 Build-Artefakte aus dem Index, `.gitignore`).
    Offen bleibt nur die Entscheidung, ob die ~12 untracked Feld-Logs ins Repo sollen.
 
