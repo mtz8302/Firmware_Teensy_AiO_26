@@ -128,29 +128,27 @@ die Schwellen nachziehen.
    Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
 4. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
    sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
-5. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
-   sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
-6. **WIDERLEGT 2026-11-07: „Ursache 2 — der Pfad-Begrenzer frisst echte Kurven"**.
+5. **WIDERLEGT 2026-11-07: „Ursache 2 — der Pfad-Begrenzer frisst echte Kurven"**.
    Im Feld-Replay ist `rl_path` in **0 von 3638** Frames aktiv (> 0,5 Grad/s). Die 18,6 %
    nicht publizierter Kurvendrehung sind 221 Grad in 9 INIT-Frames plus 382 Grad ueber
    816 LIVE-Frames (0,5 Grad/Frame, Ratenklassen breit verteilt, kein Deckel) — also
    normaler Filter-Nachlauf, kein Fehler. Punkt geschlossen; nicht wieder aufmachen,
    ohne einen Log zu zeigen, in dem `rl_path` ungleich 0 ist.
-7. **GESCHLOSSEN 2026-11-07: der Modellskala-Widerspruch** (B10.86). Regel: `effWheelbaseFac` bleibt
+6. **GESCHLOSSEN 2026-11-07: der Modellskala-Widerspruch** (B10.86). Regel: `effWheelbaseFac` bleibt
    **1,0**. Fuenf HR-Logs, zwei unabhaengige Wahrheiten (Lage-Rate und Kurs-Rate), nur eindeutige
   1-s-Fenster: L_eff **2,04…2,53 m**, Median **2,2 m** gegen 2,14 m nominal → Faktor **1,03**.
    Die alten 1,38 und 1,30 sind Artefakte der Schaetzung (pro Frame ist die Lage-Rate bei kurzer
   Basislinie zu verrauscht: Kreuzkorrelation flach bei r = 0,02…0,13; ohne Signalschwelle setzt
   Rauschen den Quotienten). **1,30 nicht wieder einfuehren** ohne eine Messung mit Signalschwelle,
   Drehsinn-Pruefung und beiden Wahrheiten.
-8. **GESCHLOSSEN 2026-11-07: `outSnapConfirmMs` war wirkungslos** (B10.88). Die Karenz mass die Zeit
+7. **GESCHLOSSEN 2026-11-07: `outSnapConfirmMs` war wirkungslos** (B10.88). Die Karenz mass die Zeit
    ab dem laufenden Frame statt ab dem Beginn der Bestaetigung und war bei 10 Hz sofort erfuellt.
    Jetzt haelt der Zweig wieder einen Frame, ein echter Sprung verzoegert sich um genau einen
    Bestaetigungsframe. **Im Sim neutral** (403 -> 401 Spruenge > 3 Grad), weil der Referenz-Log
    eine saubere RTK-Fahrt ist; die Wirkung ist auf einem Log mit gestoerter Lage zu zeigen.
    Offen bleibt: 1.2a/1.2b (`attPathTol`) nicht gebaut.
 
-9. **Sim-Repo-Hygiene**: erledigt 2026-11-07 (115 Build-Artefakte aus dem Index, `.gitignore`).
+8. **Sim-Repo-Hygiene**: erledigt 2026-11-07 (115 Build-Artefakte aus dem Index, `.gitignore`).
    Offen bleibt nur die Entscheidung, ob die ~12 untracked Feld-Logs ins Repo sollen.
 
 
@@ -171,6 +169,14 @@ die Schwellen nachziehen.
   1300...2999 mit Reserve, Meldungstexte bei 2000 (500 reserviert).
 
 **Offen, priorisiert:**
+> **ACHTUNG: diese Liste ist der Stand bis 2026-11-06 und in Teilen ueberholt.** Verbindlich ist
+> der Abschnitt **„Stand 2026-11-07"** weiter unten. Dort sind erledigt: Modellskala (B10.86,
+> Fac bleibt 1,0), Ursache 2 (B10.84, widerlegt), Snap-Karenz (B10.88), 1.2a/1.2b (B10.89,
+> verworfen), Sim-Repo-Hygiene (erledigt), Epochen-Bewertung (B10.92, ableitbar). Offen bleiben
+> nur: Feldprobe, `pc_ok`-Rest, Analog-Erkennung Stufe 2, `kOutHardRateDegS` fuer Ackermann und
+> die Entscheidung zu den untracked Feld-Logs.
+
+
 
 1. **gamma/2-Schaetzung ruhiger machen** - die letzten 3 % sind Bewegung des SCHAETZERS,
    kein Limiter-Thema: `artEstTauS` 0,6 -> 1,2 s testen, oder gamma hilfsweise aus der

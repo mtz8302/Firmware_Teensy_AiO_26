@@ -197,13 +197,14 @@ Alles andere (Zaun, Trim, Latenz) ist heute nicht dran — nicht ueberladen.
 1. [ ] Flashen. **WARNUNG**: die Defaults sind jetzt **Traktor** (Radstand **2,50 m**, Typ 0,
    40 Grad, Offset 90) — nicht mehr die Maschine. Ohne die Werte unten rechnet die Firmware
    die Kruemmung **2,7-fach falsch**.
-2. [ ] **ZUERST die Basislinie** (B10.91!): die Maschine lief am 11-07 in **76 % der Frames
-   im gedrosselten Zweig** (`att_q = 1`), weil die Basislinien-Referenz nicht zur geloesten
-   Laenge passte. Die Referenz steht im Boot-Log: `physicalBaselineM: ... using the built-in
-   default 0.711 m`. Auf der Bruecken-Geometrie-Seite die **gemessene** Laenge eintragen
-   (11-07 geloest: **0,83 m**) oder **0 = lernen**. Danach im Log pruefen:
-   `|baseline_dev_pct| < 5 %` und `att_q = 0` — **sonst sind alle anderen Zahlen hier
-   Messwerte aus dem gedrosselten Zweig und nicht zu gebrauchen.**
+2. [ ] **ZUERST die Basislinie** (B10.91/B10.92): am 11-07 waren **24 % der Frames
+   gedrosselt** (`att_q = 0`; Achtung: `att_q = 1` heisst SAUBER), davon **542** wegen der
+   Basislinien-Abweichung. Die Referenz steht im Boot-Log: `physicalBaselineM: ... using the
+   built-in default 0.711 m`. Auf der Bruecken-Geometrie-Seite die **gemessene** Laenge
+   eintragen (11-07 geloest: **0,83 m**) oder **0 = lernen**. Danach im Log pruefen:
+   `|baseline_dev_pct| < 5 %` — **sonst sind alle anderen Zahlen hier Messwerte aus dem
+   gedrosselten Zweig.** Auswerten mit `tools/analysis/att_why.ps1` (leitet den Grund aus
+   `qf`, `uni_hdgsd` und `baseline_dev_pct` ab).
 
 3. [ ] `/vwas` oeffnen. **Die Seite MUSS jetzt laden** (vorher 503). Wenn sie leer bleibt, ist
    die Reparatur nicht im Binary → nicht weiterfahren, Firmware-Stand pruefen.
