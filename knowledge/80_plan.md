@@ -128,12 +128,20 @@ die Schwellen nachziehen.
    Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
 4. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
    sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
-5. **Aus frueheren Sitzungen weiter offen**: Ursache 2 der 90-Grad-Kurve (Pfad-Begrenzer
-   frisst echte Kurven - durch B10.84 entschaerft, nicht geloest), Modellskala-Widerspruch
-   (L_eff 2,14 vs 2,95 m), 1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik aufraeumen
-   (`outSnapConfirmMs` seit B10.77 fast wirkungslos).
-6. **Sim-Repo-Hygiene**: weiterhin viele Commits vor `origin/main`, Build-Artefakte
+5. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
+   sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
+6. **WIDERLEGT 2026-11-07: „Ursache 2 — der Pfad-Begrenzer frisst echte Kurven"**.
+   Im Feld-Replay ist `rl_path` in **0 von 3638** Frames aktiv (> 0,5 Grad/s). Die 18,6 %
+   nicht publizierter Kurvendrehung sind 221 Grad in 9 INIT-Frames plus 382 Grad ueber
+   816 LIVE-Frames (0,5 Grad/Frame, Ratenklassen breit verteilt, kein Deckel) — also
+   normaler Filter-Nachlauf, kein Fehler. Punkt geschlossen; nicht wieder aufmachen,
+   ohne einen Log zu zeigen, in dem `rl_path` ungleich 0 ist.
+7. **Aus frueheren Sitzungen weiter offen**: Modellskala-Widerspruch (L_eff 2,14 vs 2,95 m),
+   1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik aufraeumen (`outSnapConfirmMs` seit
+   B10.77 fast wirkungslos).
+8. **Sim-Repo-Hygiene**: weiterhin viele Commits vor `origin/main`, Build-Artefakte
    (`SourceCode_AgOpenGPS/**/obj/`) als "modified" -> `.gitignore` ergaenzen.
+
 
 
 

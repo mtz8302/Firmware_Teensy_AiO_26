@@ -188,3 +188,46 @@ Fehlerfall also 1:1 ab - **P1 ist damit offline messbar**.
 Wertindex = Zeilennummer in `HR_HDR.current.txt` minus 1. Geprueft: `c[24]=baseline_m 0,727`,
 `c[86]=uni_len 0,716`, `c[87]=uni_hdg`, `c[89]=uni_hdgsd 0,53`, `c[92-1]=att_q`.
 `cr_resid` = c[126], `yr_raw` = c[125].
+## 10. FELDPROBE 2026-11-08 — die erste Fahrt mit der VWAS-Reparatur (B10.81…B10.85)
+
+Diese Fahrt hat EINEN Zweck: pruefen, ob die vier Feldbefunde vom 11-07 wirklich weg sind.
+Alles andere (Zaun, Trim, Latenz) ist heute nicht dran — nicht ueberladen.
+
+### 10.1 Vor dem Losfahren (5 Minuten, in dieser Reihenfolge)
+1. [ ] Flashen. **WARNUNG**: die Defaults sind jetzt **Traktor** (Radstand **2,50 m**, Typ 0,
+   40 Grad, Offset 90) — nicht mehr die Maschine. Ohne die Werte unten rechnet die Firmware
+   die Kruemmung **2,7-fach falsch**.
+2. [ ] `/vwas` oeffnen. **Die Seite MUSS jetzt laden** (vorher 503). Wenn sie leer bleibt, ist
+   die Reparatur nicht im Binary → nicht weiterfahren, Firmware-Stand pruefen.
+3. [ ] Eintragen und **speichern**: Radstand **0,92** · Antenne vor Achse **0,41** ·
+   halber Radstand **0,84** · Typ **2 (Knicklenker)** · max. Lenkwinkel **75** ·
+   Dual-Offset **88,3**. Danach **Seite neu laden** und pruefen, ob die Werte stehen
+   geblieben sind (das war der eigentliche Fehler: nichts liess sich speichern).
+4. [ ] Einmal **Strom aus/ein**. Werte muessen aus dem EEPROM zurueckkommen.
+5. [ ] Log starten (seriell, `AIO_HR_LOG`), **10 s Stillstand** als Referenzblock.
+
+### 10.2 Was fahren (kurz halten, 6 Minuten)
+| # | Manoever | Dauer | Was es beweist |
+|---|---|---|---|
+| A | Stillstand, Raeder gerade | 20 s | `veh_type=2`, `wq=0` (nicht 100), `az_out` ≈ 0 |
+| B | Geradeaus 2…4 km/h | 60 s | `pc_ok` > 15 %, `rl_clip` deutlich unter 88 %, kein −91 Grad |
+| C | 2…3 **scharfe** Wendungen (Hand) | 30 s | Knick wird publiziert; `|Δaz|/|Δatt|` nahe 1 in der Wendung |
+| D | Optional: unter Baeumen | 30 s | Zustandswechsel ohne Sprung im Knick |
+
+### 10.3 Abnahme (drei Zahlen, alle im Log, alle vorher/nachher bekannt)
+| Groesse | Vorher (11-07) | Erwartung | Wenn nicht erreicht |
+|---|---|---|---|
+| `veh_type` | **0 in allen Frames** | **2** in allen Frames | Geometrie kommt nicht an → Save-Hook/EEPROM pruefen (B10.81) |
+| `wq` + `wheel_deg` | **100 / −91,0 Grad** | **0** und kein −91 mehr | Plausibilitaetsnetz greift nicht → `maxSteeringAngle` im EEPROM? (B10.82) |
+| `rl_clip` | **88 %** (Replay 84,7 → 27,9) | **≈ 25…30 %** | Halte-Deckel rechnet noch mit falschem L → Geometrie (B10.81) |
+| `pc_ok` | **15,6 %** (Replay 20,6) | **≥ 20 %** | erwartbar; mehr geht laut B10.53 nicht ohne neuen Ansatz |
+| `|Δaz|/|Δatt|` in Wendungen | **40 %** | **> 80 %** | Deckel/Rampe pruefen — aber **nur** mit gespeicherter Geometrie messen |
+
+### 10.4 Was diese Fahrt NICHT klaeren kann
+* **`guid=0`**: solange AOG nicht lenkt, ist jede Aussage ueber „Autosteer-Qualitaet"
+  ungueltig (am 11-07 war `guid` in **allen** Frames 0 — die Fahrt war handgelenkt).
+* **Kurvenverlust**: 18,6 % der Kurvendrehung wurden nicht publiziert — davon 221 Grad in
+  **9 INIT-Frames** (Anlauf) und der Rest als **0,5 Grad/Frame** ueber LIVE verteilt, ohne
+  Deckel (Ratenklassen breit verteilt). `rl_path` war in **0 von 3638** Frames aktiv, d. h.
+  die alte Vermutung „Pfad-Begrenzer frisst echte Kurven" ist **widerlegt**. Offen bleibt nur
+  die normale Filter-Nachlaufzeit — kein Fehler, kein Handlungsbedarf.
