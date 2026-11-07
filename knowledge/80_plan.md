@@ -214,6 +214,20 @@ gilt `attOk = hasDualHeading && !attJumped && lagePasstZumPfad`, mit
 verfügbar (Schleichfahrt unter 0,3 m/s), bleibt `qfOk` das Kriterium wie heute.
 Das harte kinematische Tor (`attJumped`, A+B4) bleibt unverändert.
 **1.2b Dasselbe Kriterium für die ANNAHME** (Anker/Gate in `evaluateAttitudeFrame`).
+
+> **1.2a/1.2b VERWORFEN 2026-11-07 (B10.89)** — mit Messung begründet, nicht aus Zeitmangel:
+> * geradeaus (Lage dreht < 2 °/s) liegt die **Ausgabe** nur **1 °** schlechter als die Lage
+>   (p90 3,8 gegen 2,8 °; Referenz-Log 6,0 gegen 4,8 °) → die Auswahl ist dort gut;
+> * der Mehraufwand der Ausgabe entsteht **fast nur in Kurven** = **Nachlauf** der
+>   Ratenbegrenzung/Halte-Logik (gewollt, B10.53/B10.84), kein Auswahlfehler;
+> * der `travelWitness` ist **per Konstruktion in Kurven ungültig** und war nur in
+>   **6,6 % der Frames** gültig → 1.2a würde genau dort filtern, wo der Fehler am kleinsten
+>   ist, und könnte dort nicht wirken, wo der Betreiber das Problem sieht;
+> * in Kurven läuft auch der **COG 12,7 °** vom Witness weg — die Sehne ist dort selbst keine
+>   Wahrheit (man würde Nachlauf doppelt zählen).
+>
+> Werkzeug für die Nachprüfung: `tools/analysis/out_vs_path.ps1` (`-MaxRateDegS 2` = geradeaus).
+> Wer Kurven verbessern will, muss am **Nachlauf der Ausgabe** ansetzen, nicht an der Auswahl.
 **1.1 `psi` aus der Ausgabe entfernen** (letzter Wert halten bzw. Kurs) – nach 1.2a/1.2b prüfen,
 ob der Schritt noch gebraucht wird.
 
