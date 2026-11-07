@@ -104,9 +104,13 @@ bool AutosteerProcessor::init() {
     LOG_INFO(EventSource::AUTOSTEER, "Initializing AutosteerProcessor");
 
     // PGN 221: Hardware-Meldungen (2026-11-06g). Transport ist der vorhandene UDP-Weg.
-    // Sprache folgt WebLanguage (ENGLISH=0, GERMAN=1); der Sketch kann sie umstellen
-    // (setHardwareMessageLanguage), wenn der Bediener die Sprache wechselt.
-    hardwareMsg.begin(aogHwTx, AogMsgLang::DE);
+    // Sprache = dieselbe Einstellung wie das Web-UI (WEB_CONFIG_ADDR: 0=EN, 1=DE, 2=LOCAL).
+    // Direkt aus dem EEPROM gelesen, damit der Startzustand unabhaengig davon stimmt, ob
+    // das Web-UI schon lief. 255/unbekannt -> DE.
+    {
+        const uint8_t lg = EEPROM.read(WEB_CONFIG_ADDR);
+        hardwareMsg.begin(aogHwTx, (lg <= 2u) ? static_cast<AogMsgLang>(lg) : AogMsgLang::DE);
+    }
     // LOCAL-Texte aus dem EEPROM (Block 1300). Leeres Feld -> EN als Rueckfall.
     (void)aogMsgStoreLoad(hardwareMsg);
 

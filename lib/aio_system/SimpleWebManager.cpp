@@ -75,9 +75,10 @@ bool FLASHMEM SimpleWebManager::begin(uint16_t port) {
 
     // Load language preference from EEPROM
     uint8_t savedLang = EEPROM.read(WEB_CONFIG_ADDR);
-    if (savedLang <= 1) {  // 0 = English, 1 = German
+    if (savedLang <= 2) {  // 0 = English, 1 = German, 2 = LOCAL (eigene Texte, PGN 221)
         currentLanguage = static_cast<WebLanguage>(savedLang);
     }
+    applyLanguageToModules();
 
     // Setup routes first
     setupRoutes();
@@ -235,6 +236,27 @@ static void rewriteModuleHtml(String& html, const String& modulePrefix) {
 // RAM1-Entlastung 2026-10-29: laeuft EINMAL beim Boot (Routen-Registrierung), muss also
 // nicht im ITCM liegen. Ohne FLASHMEM belegte die Funktion 3.3 KB von den 512 KB, die sich
 // ITCM (Code) und DTCM (Variablen) teilen - der Link scheiterte mit -928 Byte.
+// ---------------------------------------------------------------------------
+// Sprache: EIN Weg fuer Web-UI und AOG-Hardware-Meldungen (2026-11-06)
+// ---------------------------------------------------------------------------
+// Betreiber-Entscheidung: die Meldungssprache ist DIESELBE wie die des Web-UI (kein
+// eigenes EEPROM-Byte). EN und DE sind im Flash kompiliert, LOCAL kommt aus dem
+// EEPROM-Block 1300 (aog_hwmsg_store.h). Die Zahlenwerte sind absichtlich gleich
+// (0/1/2), damit die Zuordnung eine reine Umwandlung ist.
+void SimpleWebManager::setLanguage(WebLanguage lang) {
+    currentLanguage = lang;
+    EEPROM.write(WEB_CONFIG_ADDR, static_cast<uint8_t>(lang));
+    applyLanguageToModules();
+}
+
+void SimpleWebManager::applyLanguageToModules() {
+    // PGN 221: Hardware-Meldungen nach AgOpenGPS. getInstance() legt das Objekt an,
+    // falls es noch nicht existiert - hier ist also kein Null-Fall zu behandeln.
+    if (AutosteerProcessor* a = AutosteerProcessor::getInstance()) {
+        a->setHardwareMessageLanguage(static_cast<AogMsgLang>(currentLanguage));
+    }
+}
+
 void FLASHMEM SimpleWebManager::setupRoutes() {
     // Home page - now using touch-friendly interface
     httpServer.on("/", [this](EthernetClient& client, const String& method, const String& query) {
@@ -310,14 +332,20 @@ void FLASHMEM SimpleWebManager::setupRoutes() {
     
     // Language selection
     httpServer.on("/lang/en", [this](EthernetClient& client, const String& method, const String& query) {
-        currentLanguage = WebLanguage::ENGLISH;
-        EEPROM.write(WEB_CONFIG_ADDR, static_cast<uint8_t>(currentLanguage));
+        setLanguage(WebLanguage::ENGLISH);
         SimpleHTTPServer::redirect(client, "/");
     });
     
     httpServer.on("/lang/de", [this](EthernetClient& client, const String& method, const String& query) {
-        currentLanguage = WebLanguage::GERMAN;
-        EEPROM.write(WEB_CONFIG_ADDR, static_cast<uint8_t>(currentLanguage));
+        setLanguage(WebLanguage::GERMAN);
+        SimpleHTTPServer::redirect(client, "/");
+    });
+
+    // LOCAL (2026-11-06): dritte Sprache - die Texte der AOG-Hardware-Meldungen (PGN 221)
+    // tippt der Bediener selbst ein (EEPROM-Block 1300). Die Web-Oberflaeche bleibt englisch,
+    // weil alle Texte dort auf "== GERMAN ? ... : ..." pruefen.
+    httpServer.on("/lang/local", [this](EthernetClient& client, const String& method, const String& query) {
+        setLanguage(WebLanguage::LOCAL);
         SimpleHTTPServer::redirect(client, "/");
     });
     

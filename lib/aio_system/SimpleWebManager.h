@@ -21,9 +21,15 @@
 #include "ESP32Interface.h"
 
 // Language support
+// LOCAL (2026-11-06): dritte Sprache fuer die AOG-Hardware-Meldungen (PGN 221). Die Texte
+// tippt der Bediener im Web-UI ein und sie liegen im EEPROM (aog_hwmsg_store.h, Block 1300);
+// EN und DE sind dagegen im Flash kompiliert. Die WEB-Oberflaeche selbst hat nur EN und DE -
+// bei LOCAL greift dort ueberall der englische Text (die Pruefungen lauten "== GERMAN ? ... : ...").
+// Der Zahlenwert 2 ist gleich AogMsgLang::LOCAL, die Zuordnung ist daher eine Umwandlung.
 enum class WebLanguage {
     ENGLISH = 0,
-    GERMAN = 1
+    GERMAN = 1,
+    LOCAL = 2
 };
 
 class SimpleWebManager {
@@ -60,6 +66,11 @@ private:
     
     // Route setup
     void setupRoutes();
+
+    // Sprache setzen (EEPROM + Module, die Texte nach aussen geben) - 2026-11-06.
+    // setLanguage() ist der eine Weg: Routen /lang/en|de|local rufen NUR noch das hier.
+    void setLanguage(WebLanguage lang);
+    void applyLanguageToModules();
     
     // Page handlers
     void sendHomePage(EthernetClient& client);
