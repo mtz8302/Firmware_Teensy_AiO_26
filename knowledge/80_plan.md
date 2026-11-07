@@ -224,7 +224,11 @@ Das harte kinematische Tor (`attJumped`, A+B4) bleibt unverändert.
 >   **6,6 % der Frames** gültig → 1.2a würde genau dort filtern, wo der Fehler am kleinsten
 >   ist, und könnte dort nicht wirken, wo der Betreiber das Problem sieht;
 > * in Kurven läuft auch der **COG 12,7 °** vom Witness weg — die Sehne ist dort selbst keine
->   Wahrheit (man würde Nachlauf doppelt zählen).
+>   Wahrheit (man würde Nachlauf doppelt zählen);
+> * der Nachlauf ist **direkt gemessen**: Verschiebung Ausgabe gegen Lage → Minimum bei
+>   **+3 Frames = 300 ms** (Feld-Log 11‑07), **200 ms** (Referenz-Log), Restabweichung dann nur
+>   2,9 bzw. 3,5 °. Die Ausgabe ist **spät, nicht falsch** — ein Auswahlkriterium repariert
+>   keinen Nachlauf von 200…300 ms.
 >
 > Werkzeug für die Nachprüfung: `tools/analysis/out_vs_path.ps1` (`-MaxRateDegS 2` = geradeaus).
 > Wer Kurven verbessern will, muss am **Nachlauf der Ausgabe** ansetzen, nicht an der Auswahl.
