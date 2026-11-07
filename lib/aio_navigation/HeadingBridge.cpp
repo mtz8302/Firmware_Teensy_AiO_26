@@ -53,6 +53,36 @@ static inline float hbWheelbaseM(float fallbackM) {
     if ((c != nullptr) && (c->wheelbase > 0.5f)) return c->wheelbase;
     return (fallbackM > 0.5f) ? fallbackM : 2.50f;
 }
+// Wenderadius fuer den RATENDECKEL IM HALTEN (2026-11-06g) - fahrzeugart-abhaengig.
+// Bisher stand hier ein fester Wert (0,60 m) mit einem festen Zuschlag (60 Grad/s) fuer den
+// Knicklenker. Fuer einen Ackermann-Schlepper ist beides falsch: 0,60 m ergaebe 95 Grad/s bei
+// 1 m/s, und einen "zweiten Rahmen" gibt es dort nicht.
+//
+//   Knicklenker: R = (L/2) / tan(gamma_max/2). Mit den Werten der Maschine (L = 0,92 m,
+//     gamma_max = 75 Grad) sind das GENAU die gemessenen 0,60 m - die Sondenbahn ist enger
+//     als das Fahrgestell, und der Vorderrahmen dreht zusaetzlich (deshalb der Zuschlag).
+//   Ackermann:   R = L / tan(delta_max). Das ist 1:1 die dokumentierte Tempo-Obergrenze aus
+//     B10.46 (57,3*v*tan(40 Grad)/L): bei L = 2,5 m und 40 Grad sind das 19 Grad/s bei
+//     1 m/s und 38 Grad/s bei 2 m/s - dieselben Werte, die fuer den Schlepper gut waren.
+//
+// Ein fester Wert in der Config (> 0,05 m) gewinnt immer: er ist dann GEMESSEN (Override).
+// Default 0 = automatisch aus der Geometrie.
+static inline float hbHoldTurnRadiusM(float overrideM) {
+    if (overrideM > 0.05f) { return overrideM; }
+    const WheelAngleFusion::Config* c = hbVwasCfg();
+    const float L = hbWheelbaseM(2.5f);
+    float maxDeg = (c != nullptr) ? c->maxSteeringAngle : 0.0f;
+    if (maxDeg < 5.0f) { maxDeg = 40.0f; }                  // unplausibel -> Ackermann-Annahme
+    const float kRad = 0.017453292519943295f;
+    float r;
+    if (hbIsArticulated()) {
+        r = (0.5f * L) / tanf(0.5f * maxDeg * kRad);
+    } else {
+        r = L / tanf(maxDeg * kRad);
+    }
+    if (r < 0.30f) { r = 0.30f; }                           // nie unter 30 cm
+    return r;
+}
 // Modellrate des Rahmens, auf dem die Antenne sitzt (angleDeg = gamma beim Knicklenker).
 static inline float hbModelRateDegS(float angleDeg, float vMps, float wheelbaseM) {
     if (wheelbaseM < 0.4f) return 0.0f;
@@ -3080,8 +3110,8 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // verworfen hiess "Ausgabe steht" (gemessen 20 der 34 stehenden Frames: Rate 100...164
         // gegen Deckel 60...70 bei v < 0,8).
         const float rateCap = attRateValid
-                            ? (speedMps / config.holdMinTurnRadiusM * 57.29578f +
-                               config.holdRateSlackDegS)
+                            ? (speedMps / hbHoldTurnRadiusM(config.holdMinTurnRadiusM) * 57.29578f +
+                               (hbIsArticulated() ? config.holdRateSlackDegS : 0.0f))
                             : config.holdRateMaxDegS;
         if (!status.reverseDirection && (speedMps > 0.1f)) {
             float rUse = rateHold;

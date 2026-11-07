@@ -593,11 +593,12 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // Kurven-Frames standen auf "halten". Die Drehrate der Dual-Antenne ist eine
     // MESSUNG und schlaegt den Zustand - dieselbe Hierarchie wie im uebrigen Modul.
     bool     holdRateFromAttitude = true;
-    // Obergrenze fuer dieses Weiterfuehren: physikalisch v / R_min. 0,60 m ist der engste
-    // Wenderadius des Testmaehers (115 cm Mähbreite, 10...20 cm Rest in der Kreismitte,
-    // 75 Grad Knick = (L/2)/tan(37,5 Grad) = 0,60 m). Beim Schlepper ist v hoeher, damit
-    // ist derselbe Deckel dort ebenfalls ausreichend.
-    float    holdMinTurnRadiusM = 0.60f;
+    // Obergrenze fuer dieses Weiterfuehren: physikalisch v / R_min.
+    // 2026-11-06g: 0 = AUTOMATISCH aus der Fahrzeuggeometrie (hbHoldTurnRadiusM()):
+    //   Knicklenker (L/2)/tan(gamma_max/2) - mit L 0,92 m und 75 Grad genau die gemessenen
+    //   0,60 m; Ackermann L/tan(delta_max) = die dokumentierte Tempo-Obergrenze B10.46.
+    // Ein Wert > 0 ist ein GEMESSENER Override und gilt immer.
+    float    holdMinTurnRadiusM = 0.0f;
     // 2026-11-06b (L2): Das Halten stand 34 von 142 Kurvenframes still. Zwei Ursachen, beide
     // gemessen am Ref-Log knick_125_241 (t = 208...217 s, enge Wende bei 0,5...1,5 m/s):
     //  1) die Lagrate springt im 100-ms-Takt zwischen -164 und +132 Grad/s (die Maschine dreht
