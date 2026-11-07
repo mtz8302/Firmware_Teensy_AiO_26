@@ -6,8 +6,8 @@
 // Eintrag faellt auf EN zurueck (Rueckfallkette in AogHwMsg::textFor).
 //
 // Block: EEPROMLayout.h -> AOG_MSG_ADDR = 2000 (dort mit der vollstaendigen Karte),
-// AOG_MSG_SIZE = 400 reserviert. Belegt sind 200 Byte (Kopf 8 + 4 x 48); die restlichen
-// 200 sind Luft, damit spaetere Meldungen nicht gegen den naechsten Block stossen.
+// AOG_MSG_SIZE = 500 reserviert. Belegt sind 200 Byte (Kopf 8 + 4 x 48); die restlichen
+// 300 sind Luft, damit spaetere Meldungen nicht gegen den naechsten Block stossen.
 // Aufbau:
 //   0   magic uint16  0xA0C1
 //   2   ver   uint8   2

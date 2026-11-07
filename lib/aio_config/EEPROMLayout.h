@@ -84,18 +84,18 @@
 //   1300 - 1499   frei (Reserve, 200 Byte)
 //   1500 - 1755   Fahrzeug-Setup   (VEHICLE_SETUP_SIZE 256, belegt bis 1608)
 //   1756 - 1999   frei (244 Byte)
-//   2000 - 2399   AOG-Meldungstexte (AOG_MSG_SIZE 400 reserviert, belegt 200)
-//   2400 - 2999   frei (600 Byte)
+//   2000 - 2499   AOG-Meldungstexte (AOG_MSG_SIZE 500 reserviert, belegt 200)
+//   2500 - 2999   frei (500 Byte)
 //
-// Die 400 Byte sind ABSICHTLICH nicht ausgeschoepft: 4 Texte x 48 Zeichen + Kopf sind
-// 200 Byte, die anderen 200 sind Luft, damit spaetere Meldungen (oder laengere Texte)
+// Die 500 Byte sind ABSICHTLICH nicht ausgeschoepft: 4 Texte x 48 Zeichen + Kopf sind
+// 200 Byte, die anderen 300 sind Luft, damit spaetere Meldungen (oder laengere Texte)
 // NICHT wieder gegen den naechsten Block stossen. Geschrieben wird nur beim Speichern im
 // Web-UI (Teensy-EEPROM ist flash-emuliert: ein write kopiert einen 4-kB-Sektor um).
 // ACHTUNG: EEPROM_VERSION dafuer NICHT erhoehen - ein Bump loescht alle Config-Bloecke.
 // (Die Adresse hat sich am 2026-11-06 von 1300 auf 2000 verschoben; ein alter Block bei
 // 1300 wird einfach nicht mehr gelesen - er liegt in der Reserve und schadet nicht.)
 #define AOG_MSG_ADDR            2000
-#define AOG_MSG_SIZE            400    // reserviert; belegt sind sizeof(AogMsgBlob) = 200
+#define AOG_MSG_SIZE            500    // reserviert; belegt sind sizeof(AogMsgBlob) = 200
 #define AOG_MSG_MAGIC           0xA0C1
 #define AOG_MSG_VER             2      // 2 = 48-Zeichen-Texte (VER 1 hatte 24)
 
