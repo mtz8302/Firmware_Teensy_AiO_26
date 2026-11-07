@@ -100,7 +100,42 @@ die Schwellen nachziehen.
 
 ## 4. Offene Punkte und Widersprüche
 
-### Stand 2026-11-06 (Fahrdynamik-Sitzung, Branch `feat/hold-att-rate`)
+### Stand 2026-11-07 (Feldtest Maeher, Branch `feat/hold-att-rate`)
+
+**Erledigt** (Belege: **B10.81...B10.85** in `10_heading.md`):
+
+* **VWAS-Geometrie ohne Motor nutzbar** (B10.81): das Objekt bleibt am Leben, `s_vwasRunning`
+  trennt „gewuenscht" von „laeuft". Damit ist die Fahrzeugseite immer erreichbar, die
+  Geometrie kommt aus dem EEPROM, und der offene ADC-Eingang wird als Qualitaet 0 gemeldet.
+* **Plausibilitaetsnetz fuer den analogen Geber** (B10.82): Bereich + 10-s-Bewegungstest,
+  Grenze empirisch aus vier Logs (91 Grad ohne Geber gegen max. 44 Grad mit).
+* **Chord-Gate entkoppelt** (B10.84): pc_ok im Sim 51 -> 67 %, im Feld-Replay 15,6 -> 20,6 %,
+  rl_clip 84,7 -> 27,9 %.
+* **gamma/2**: einfrieren -> 1 s Karenz -> Rampe; PGN 253 sendet den ANGEWANDTEN Knick.
+* **Defaults** auf Traktor-Werte + Offset 90 Grad (B10.85, mit dem dokumentierten Widerspruch
+  zur Entscheidung vom 2026-11-02).
+
+**Offen, priorisiert:**
+
+1. **Feldprobe mit der neuen Firmware** (der eigentliche naechste Schritt): Werte auf der
+   Seite eintragen (92 / 75 / 41 / 84, Typ 2, Offset 88,3), dann messen, ob `rl_clip` wirklich
+   auf ~25 % faellt und `-91 Grad` in AOG durch den berechneten Knick ersetzt wird.
+2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
+   und `=7` (keine Sehnenprobe) sind laut **B10.53 gemessen** und duerfen NICHT einfach
+   aufgeweitet werden (Verfuegbarkeit 74 %, skew p90 4,3 -> 19,1). Wer das verbessern will,
+   braucht einen anderen Ansatz als B(v) - z. B. eine zweite, unabhaengige Probe.
+3. **IMU-Rate in BRIDGE/COAST** (B10.83): im IMU-Log 0 % trotz `imu_q = 10` und 4...6 m/s.
+   Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
+4. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
+   sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
+5. **Aus frueheren Sitzungen weiter offen**: Ursache 2 der 90-Grad-Kurve (Pfad-Begrenzer
+   frisst echte Kurven - durch B10.84 entschaerft, nicht geloest), Modellskala-Widerspruch
+   (L_eff 2,14 vs 2,95 m), 1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik aufraeumen
+   (`outSnapConfirmMs` seit B10.77 fast wirkungslos).
+6. **Sim-Repo-Hygiene**: weiterhin viele Commits vor `origin/main`, Build-Artefakte
+   (`SourceCode_AgOpenGPS/**/obj/`) als "modified" -> `.gitignore` ergaenzen.
+
+
 
 **Erledigt** (Belege: **B10.73...B10.79** in `10_heading.md`, neu `90_aog_messages.md`):
 
