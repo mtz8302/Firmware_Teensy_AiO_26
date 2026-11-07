@@ -105,8 +105,10 @@ const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             background: #ffffff;
             color: #111111;
         }
-        .status.ok { color: #1e7e34; }
-        .status.err { color: #b02a37; }
+        /* Kein eigenes .ok/.err: die Projekt-Konvention ist .status.success (gruener
+           Hintergrund, weisse Schrift) und .status.error (rot) - definiert in touch.css
+           und von allen anderen Seiten benutzt. Eigene Schriftfarben sahen daneben
+           anders aus (Betreiber-Befund 2026-11-06). */
         @media (max-width: 480px) {
             .nav-buttons, .lang-row { grid-template-columns: 1fr; }
         }
@@ -189,10 +191,12 @@ const KEYS = ['weakFix', 'bridge', 'noCourse', 'posJump'];
 let CURRENT_ACTIVE = {};
 const LANG_NAME = ['English', 'Deutsch', 'Local'];
 
-function setStatus(text, ok) {
+// kind: 'success' | 'error' | null - genau die Klassen aus touch.css (gleiche Optik wie
+// alle anderen Seiten: gruen/weiss bzw. rot/weiss; null = neutraler grauer Kasten).
+function setStatus(text, kind) {
     const el = document.getElementById('status');
     el.innerText = text;
-    el.className = 'status' + (ok === true ? ' ok' : (ok === false ? ' err' : ''));
+    el.className = 'status' + (kind === 'success' ? ' success' : (kind === 'error' ? ' error' : ''));
 }
 
 function setLangActive(lang) {
@@ -209,7 +213,7 @@ function setActiveTexts(active, lang) {
         if (el) { el.innerText = CURRENT_ACTIVE[k] || '-'; }
     });
     const name = LANG_NAME[Number(lang)];
-    if (name) { setStatus('Language: ' + name + ' - the texts above are what AgOpenGPS shows.', true); }
+    if (name) { setStatus('Language: ' + name + ' - the texts above are what AgOpenGPS shows.', null); }
 }
 
 // Die aktiven Texte in die Felder uebernehmen, damit man sie abwandeln kann
@@ -219,7 +223,7 @@ function copyActive() {
         const el = document.getElementById(k);
         if (el && CURRENT_ACTIVE[k]) { el.value = CURRENT_ACTIVE[k].substring(0, 47); }
     });
-    setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', true);
+    setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', null);
 }
 
 function load() {
@@ -232,7 +236,7 @@ function load() {
         setActiveTexts(c.active, c.lang);
     }).catch(function (e) {
         // Sichtbar scheitern: ein stiller Fehler sieht aus wie "nichts gespeichert".
-        setStatus('Could not load: ' + e, false);
+        setStatus('Could not load: ' + e, 'error');
     });
 }
 
@@ -248,11 +252,11 @@ function save() {
         if (j.status === 'ok') {
             // Nach dem Speichern die aktiven Texte neu holen: bei Sprache "Local" aendert
             // sich damit auch die Anzeige "active now".
-            setStatus('Saved. The new texts are active now.', true);
+            setStatus('Saved. The new texts are active now.', 'success');
             load();
-        } else { setStatus('Error: ' + (j.message || 'unknown'), false); }
+        } else { setStatus('Error: ' + (j.message || 'unknown'), 'error'); }
     }).catch(function (e) {
-        setStatus('Save failed: ' + e, false);
+        setStatus('Save failed: ' + e, 'error');
     });
 }
 
