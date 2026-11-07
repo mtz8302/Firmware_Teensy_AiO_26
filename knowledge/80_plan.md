@@ -136,11 +136,18 @@ die Schwellen nachziehen.
    816 LIVE-Frames (0,5 Grad/Frame, Ratenklassen breit verteilt, kein Deckel) — also
    normaler Filter-Nachlauf, kein Fehler. Punkt geschlossen; nicht wieder aufmachen,
    ohne einen Log zu zeigen, in dem `rl_path` ungleich 0 ist.
-7. **Aus frueheren Sitzungen weiter offen**: Modellskala-Widerspruch (L_eff 2,14 vs 2,95 m),
-   1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik aufraeumen (`outSnapConfirmMs` seit
-   B10.77 fast wirkungslos).
-8. **Sim-Repo-Hygiene**: weiterhin viele Commits vor `origin/main`, Build-Artefakte
-   (`SourceCode_AgOpenGPS/**/obj/`) als "modified" -> `.gitignore` ergaenzen.
+7. **GESCHLOSSEN 2026-11-07: der Modellskala-Widerspruch** (B10.86). Regel: `effWheelbaseFac` bleibt
+   **1,0**. Fuenf HR-Logs, zwei unabhaengige Wahrheiten (Lage-Rate und Kurs-Rate), nur eindeutige
+  1-s-Fenster: L_eff **2,04…2,53 m**, Median **2,2 m** gegen 2,14 m nominal → Faktor **1,03**.
+   Die alten 1,38 und 1,30 sind Artefakte der Schaetzung (pro Frame ist die Lage-Rate bei kurzer
+  Basislinie zu verrauscht: Kreuzkorrelation flach bei r = 0,02…0,13; ohne Signalschwelle setzt
+  Rauschen den Quotienten). **1,30 nicht wieder einfuehren** ohne eine Messung mit Signalschwelle,
+  Drehsinn-Pruefung und beiden Wahrheiten.
+8. **Aus frueheren Sitzungen weiter offen**: 1.2a/1.2b (`attPathTol`) nicht gebaut, Snap-Mechanik
+   aufraeumen (`outSnapConfirmMs` seit B10.77 fast wirkungslos).
+9. **Sim-Repo-Hygiene**: erledigt 2026-11-07 (115 Build-Artefakte aus dem Index, `.gitignore`).
+   Offen bleibt nur die Entscheidung, ob die ~12 untracked Feld-Logs ins Repo sollen.
+
 
 
 
