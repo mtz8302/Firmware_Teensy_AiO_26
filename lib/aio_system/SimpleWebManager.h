@@ -84,6 +84,8 @@ private:
     void sendCANConfigPage(EthernetClient& client);
     void sendCANConfigUploadPage(EthernetClient& client);
     void sendVWASConfigPage(EthernetClient& client);
+    // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221) - 2026-11-06
+    void sendHwMsgPage(EthernetClient& client);
 
     // API handlers
     void handleApiStatus(EthernetClient& client);
@@ -102,6 +104,8 @@ private:
     void handleCANConfigUpload(EthernetClient& client);
     void handleVWASStatus(EthernetClient& client);
     void handleVWASConfig(EthernetClient& client, const String& method);
+    // GET liefert die LOCAL-Texte + aktive Sprache, POST speichert sie (EEPROM 1300).
+    void handleHwMsgConfig(EthernetClient& client, const String& method);
     // Antenna geometry of the dual-antenna baseline, two values AgOpenGPS has to agree on:
     //   meters    = the mechanical antenna spacing (HeadingBridge::Config::physicalBaselineM)
     //   offsetDeg = the dual-antenna heading offset, the SAME number AgOpenGPS carries

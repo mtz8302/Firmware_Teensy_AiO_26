@@ -38,6 +38,7 @@
 #include "web_pages/CANConfigUploadPage.h"  // CAN config upload page
 #include "web_pages/TouchFriendlyDNSAliasPage.h"  // DNS alias configuration page
 #include "web_pages/VWASConfigPage.h"  // Virtual WAS configuration page
+#include "web_pages/HwMsgPage.h"       // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
 #include "HeadingMonitor.h"            // HPR heading-health logging (test drive)
 #include "HeadingBridge.h"             // heading/roll fall-back diagnostics
 #include "CANConfigStorage.h"  // LittleFS storage for custom CAN config
@@ -347,6 +348,14 @@ void FLASHMEM SimpleWebManager::setupRoutes() {
     httpServer.on("/lang/local", [this](EthernetClient& client, const String& method, const String& query) {
         setLanguage(WebLanguage::LOCAL);
         SimpleHTTPServer::redirect(client, "/");
+    });
+
+    // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
+    httpServer.on("/hwmsg", [this](EthernetClient& client, const String& method, const String& query) {
+        sendHwMsgPage(client);
+    });
+    httpServer.on("/api/hwmsg/config", [this](EthernetClient& client, const String& method, const String& query) {
+        handleHwMsgConfig(client, method);
     });
     
     // API endpoints
@@ -852,6 +861,56 @@ void SimpleWebManager::sendCANConfigUploadPage(EthernetClient& client) {
 void SimpleWebManager::sendVWASConfigPage(EthernetClient& client) {
     extern const char VWAS_CONFIG_PAGE[];
     SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", VWAS_CONFIG_PAGE);
+}
+
+// ---------------------------------------------------------------------------
+// Sprache + Texte der AOG-Hardware-Meldungen (PGN 221) - 2026-11-06
+// ---------------------------------------------------------------------------
+void SimpleWebManager::sendHwMsgPage(EthernetClient& client) {
+    extern const char HW_MSG_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", HW_MSG_PAGE);
+}
+
+void FLASHMEM SimpleWebManager::handleHwMsgConfig(EthernetClient& client, const String& method) {
+    AutosteerProcessor* a = AutosteerProcessor::getInstance();
+    if (a == nullptr) {
+        SimpleHTTPServer::send(client, 503, "application/json",
+                                "{\"error\":\"Autosteer not active\"}");
+        return;
+    }
+
+    if (method == "POST") {
+        const String body = readPostBody(client);
+        JsonDocument doc;
+        if (deserializeJson(doc, body) != DeserializationError::Ok) {
+            SimpleHTTPServer::sendJSON(client,
+                "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+            return;
+        }
+        // Ein Feld, das NICHT im JSON steht, bleibt unveraendert; ein LEERES loescht den
+        // Text (dann gilt Englisch). Die Grenze (23 Zeichen) setzt der Sender ohnehin
+        // durch (AOG_LOCAL_LEN), das Web-Formular begrenzt zusaetzlich per maxlength.
+        if (!doc["weakFix"].isNull())  { a->setLocalHardwareMessageText(AogMsgId::WeakFix,  doc["weakFix"]  | ""); }
+        if (!doc["bridge"].isNull())   { a->setLocalHardwareMessageText(AogMsgId::Bridge,   doc["bridge"]   | ""); }
+        if (!doc["noCourse"].isNull()) { a->setLocalHardwareMessageText(AogMsgId::NoCourse, doc["noCourse"] | ""); }
+        if (!doc["posJump"].isNull())  { a->setLocalHardwareMessageText(AogMsgId::PosJump,  doc["posJump"]  | ""); }
+        // Nur hier wird das EEPROM geschrieben (Block 1300, 104 Byte).
+        a->saveLocalHardwareMessageTexts();
+        LOG_INFO(EventSource::NETWORK, "PGN221: lokale Meldungstexte gespeichert");
+        SimpleHTTPServer::sendJSON(client, "{\"status\":\"ok\"}");
+        return;
+    }
+
+    // GET: die lokalen Texte und die aktive Sprache
+    JsonDocument doc;
+    doc["weakFix"]  = a->getLocalHardwareMessageText(AogMsgId::WeakFix);
+    doc["bridge"]   = a->getLocalHardwareMessageText(AogMsgId::Bridge);
+    doc["noCourse"] = a->getLocalHardwareMessageText(AogMsgId::NoCourse);
+    doc["posJump"]  = a->getLocalHardwareMessageText(AogMsgId::PosJump);
+    doc["lang"]     = static_cast<uint8_t>(currentLanguage);
+    String json;
+    serializeJson(doc, json);
+    SimpleHTTPServer::sendJSON(client, json);
 }
 
 // WAS Demo page removed - using WebSocket telemetry instead

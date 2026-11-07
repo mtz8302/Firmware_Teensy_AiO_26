@@ -93,6 +93,12 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
                 </svg>
                 Event Logger Config
             </a></li>
+            <li><a href="/hwmsg">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
+                    <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2m-3 12H7v-2h10v2m0-4H7V8h10v2Z"/>
+                </svg>
+                Messages &amp; language<br><span style="font-size:12px;opacity:0.7">texts shown in AgOpenGPS</span>
+            </a></li>
             <li><a href="/logs">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
                     <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5Z"/>

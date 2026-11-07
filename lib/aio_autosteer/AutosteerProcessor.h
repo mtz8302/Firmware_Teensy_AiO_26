@@ -211,6 +211,13 @@ public:
                              uint8_t prio, uint32_t minGapMs);
     // Katalogmeldung in der eingestellten Sprache (Texte siehe aog_hwmsg.h).
     bool sendHardwareMessage(AogMsgId id);
+
+    // LOCAL-Texte (dritte Sprache, EEPROM-Block 1300). Leer = EN als Rueckfall.
+    // Wird vom Web-UI (/hwmsg) benutzt: erst setzen, dann speichern.
+    void setLocalHardwareMessageText(AogMsgId id, const char* t) { hardwareMsg.setLocalText(id, t); }
+    const char* getLocalHardwareMessageText(AogMsgId id) const { return hardwareMsg.localText(id); }
+    const char* getHardwareMessageText(AogMsgId id) const { return hardwareMsg.textFor(id); }
+    void saveLocalHardwareMessageTexts();
     
     // PGN handlers
     void handleBroadcastPGN(uint8_t pgn, const uint8_t* data, size_t len);

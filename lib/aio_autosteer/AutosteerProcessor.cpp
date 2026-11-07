@@ -1691,6 +1691,12 @@ bool AutosteerProcessor::sendHardwareMessage(AogMsgId id) {
     return hardwareMsg.send(id, millis());
 }
 
+// LOCAL-Texte dauerhaft ablegen (EEPROM-Block 1300). NUR vom Web-UI beim Speichern
+// aufrufen: Teensy-EEPROM ist flash-emuliert, jeder write kopiert einen 4-kB-Sektor um.
+void AutosteerProcessor::saveLocalHardwareMessageTexts() {
+    aogMsgStoreSave(hardwareMsg);
+}
+
 // Warnungen aus dem Bridge-Zustand. Ein ZUSTAND wird erst nach 2 s gemeldet (sonst flattert
 // die Anzeige bei jedem schlechten Epoch), ein EREIGNIS (Positionssprung) sofort. Abstaende
 // und Prioritaeten stehen im Katalog, damit sich Meldungen nicht gegenseitig verdraengen.
