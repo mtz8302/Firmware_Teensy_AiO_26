@@ -1,4 +1,4 @@
-﻿// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
+// Firmware_Teensy_AiO-New-Dawn is copyright 2025 by the AOG Group
 // Firmware_Teensy_AiO-New-Dawn is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 // Firmware_Teensy_AiO-New-Dawn is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
@@ -45,6 +45,13 @@ extern WheelAngleFusion* wheelAngleFusionPtr;
 
 // Global pointer definition
 AutosteerProcessor* autosteerPTR = nullptr;
+
+// 2026-11-07: "Das VWAS ARBEITET" (init() erfolgreich) - unabhaengig davon, ob ein VWAS
+// gewuenscht ist (configManager.getINSUseFusion()). Das Objekt kann naemlich auch ohne
+// Motor/Encoder existieren: es traegt dann nur die Fahrzeuggeometrie. Alles, was eine
+// FUNKTIONIERENDE Fusion braucht (update(), FusedAngle, Geschwindigkeit, Stillstands-
+// Erkennung), muss s_vwasRunning pruefen - nicht nur den Zeiger und nicht nur das Flag.
+static bool s_vwasRunning = false;
 
 // Vorwaertsdeklaration: definiert weiter unten im VWAS-Persistenz-Block (gleicher
 // unnamed namespace). Wird schon in initializeFusion() als Hook gesetzt, also
@@ -234,6 +241,7 @@ void AutosteerProcessor::initializeFusion() {
     
     if (wheelAngleFusionPtr->init(encoderDriver, gnssProcessorPtr, &imuProcessor)) {
         LOG_INFO(EventSource::AUTOSTEER, "Virtual WAS (VWAS) initialized successfully");
+        s_vwasRunning = true;
 
         // Vehicle geometry and encoder calibration are deliberately NOT set
         // here. The Config struct in WheelAngleFusion.h carries the documented
@@ -369,10 +377,26 @@ void AutosteerProcessor::initializeFusion() {
                         vwasCfg.maxSteeringAngle);
         }
     } else {
-        LOG_ERROR(EventSource::AUTOSTEER, "Failed to initialize Virtual WAS");
-        configManager.setINSUseFusion(false);  // Disable VWAS
-        delete wheelAngleFusionPtr;
-        wheelAngleFusionPtr = nullptr;
+        // 2026-11-07 (Feldbefund aus Log 11-07): Das Objekt BLEIBT am Leben. Es traegt die
+        // Fahrzeuggeometrie (wheelbase, vehicleType, maxSteeringAngle, antennaPivot) - und die
+        // wird auch OHNE Motor/Encoder gebraucht: fuer den BERECHNETEN Lenkwinkel an AOG, die
+        // Knicklenker-Schaetzung und den Wende-Deckel.
+        // Vorher wurde es hier geloescht. Folgen, alle im Log belegt:
+        //   * /api/vwas/config antwortete 503 -> die Fahrzeugseite war leer und nichts liess
+        //     sich speichern (Radstand, Typ, Knickwinkel kamen nie ins EEPROM),
+        //   * hbVwasCfg() war null -> L = 2,50 m statt 0,92 m, vehicleType 0 statt 2, keine
+        //     Knickwinkel-Schaetzung, Halte-Deckel 29 statt 203 Grad/s,
+        //   * die Qualitaetsregel in selectSteerAngle() lieferte 100 fuer einen OFFENEN
+        //     ADC-Eingang -> -91 Grad gingen als Lenkwinkel an AgOpenGPS.
+        // INSUseFusion bleibt aus demselben Grund stehen: das Flag sagt "VWAS ist GEWUENSCHT",
+        // s_vwasRunning sagt "es LAEUFT". Die Qualitaetsregel braucht genau diese
+        // Unterscheidung, um den nicht verdrahteten Analogeingang als unbrauchbar zu melden.
+        LOG_WARNING(EventSource::AUTOSTEER,
+                    "VWAS: kein Encoder/Motor - Fusion inaktiv, Fahrzeuggeometrie bleibt "
+                    "nutzbar (/vwas und berechneter Lenkwinkel)");
+        s_vwasRunning = false;
+        loadVehicleSetup();                                    // Geometrie aus dem EEPROM
+        g_vehicleSetupSaveHook = &vehicleSetupSaveTrampoline;   // Aenderungen speicherbar
     }
 }
 
@@ -393,7 +417,7 @@ void AutosteerProcessor::process() {
     // Update Virtual WAS if enabled. Must keep running even while a manual
     // calibration session is open, because the capture buttons read
     // getRawCounts()/getEncoderAngle() live.
-    if (wheelAngleFusionPtr && configManager.getINSUseFusion()) {
+    if (wheelAngleFusionPtr && s_vwasRunning) {
         float dt = 10.0f / 1000.0f;  // 10ms = 0.01 seconds (100Hz from SimpleScheduler)
         wheelAngleFusionPtr->update(dt);
     }
@@ -1524,7 +1548,7 @@ void AutosteerProcessor::selectSteerAngle() {
         keyaWasSource = canConfig.reserved[0];
 
         if (isTractorCANKeya) {
-            if (keyaWasSource == 2 && configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+            if (keyaWasSource == 2 && s_vwasRunning && configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
                 selectedAngle = wheelAngleFusionPtr->getFusedAngle();
                 wheelQuality = wheelAngleFusionPtr->getAngleQuality();
                 angleSource = 1;
@@ -1549,7 +1573,7 @@ void AutosteerProcessor::selectSteerAngle() {
             float scale = tractorCAN->getCurveScale();
             selectedAngle = (float)canCurve / scale;
             angleSource = 2;
-        } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+        } else if (s_vwasRunning && configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
             selectedAngle = wheelAngleFusionPtr->getFusedAngle();
             wheelQuality = wheelAngleFusionPtr->getAngleQuality();
             angleSource = 1;
@@ -1562,7 +1586,7 @@ void AutosteerProcessor::selectSteerAngle() {
             wheelQuality = configManager.getINSUseFusion() ? 0.0f : 100.0f;
             angleSource = 0;
         }
-    } else if (configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
+    } else if (s_vwasRunning && configManager.getINSUseFusion() && wheelAngleFusionPtr && wheelAngleFusionPtr->isHealthy()) {
         selectedAngle = wheelAngleFusionPtr->getFusedAngle();
         wheelQuality = wheelAngleFusionPtr->getAngleQuality();
         angleSource = 1;
@@ -1867,8 +1891,8 @@ void AutosteerProcessor::updateMotorControl() {
     // speed leaves the factor at 1.0, i.e. today's behaviour.
     // Note: this is a stand-in for the data quality (see 01_ziele.md D6 - filter
     // by data quality, not by speed); speed is only the proxy for it.
-    const float speedKmhNow = (wheelAngleFusionPtr ? wheelAngleFusionPtr->getSpeedMps()
-                                                  : vehicleSpeed / 3.6f) * 3.6f;
+    const float speedKmhNow = ((wheelAngleFusionPtr && s_vwasRunning) ? wheelAngleFusionPtr->getSpeedMps()
+                                                                     : vehicleSpeed / 3.6f) * 3.6f;
     float rampFactor = 1.0f;
     if (speedKmhNow < RAMP_SLOW_KMH) {
         rampFactor = (speedKmhNow <= RAMP_FULL_KMH)
@@ -2185,15 +2209,15 @@ bool AutosteerProcessor::shouldSteerBeActive() const {
     static uint32_t aboveSince    = 0;
     static uint32_t lastAboveTime = 0;
 
-    float speedMps = wheelAngleFusionPtr ? wheelAngleFusionPtr->getSpeedMps()
-                                         : (vehicleSpeed / 3.6f);
+    float speedMps = (wheelAngleFusionPtr && s_vwasRunning) ? wheelAngleFusionPtr->getSpeedMps()
+                                                           : (vehicleSpeed / 3.6f);
     const float aogFloorMps     = configManager.getMinSpeed() / 36.0f;  // 0.1 km/h -> m/s
     const float speedFloorMps   = (aogFloorMps > STEER_MIN_SPEED_MPS) ? aogFloorMps
                                                                       : STEER_MIN_SPEED_MPS;
     const float speedReleaseMps = speedFloorMps * 0.75f;
 
     bool standstillVeto = false;
-    if (wheelAngleFusionPtr && wheelAngleFusionPtr->hasStandstillAssessment()) {
+    if (wheelAngleFusionPtr && s_vwasRunning && wheelAngleFusionPtr->hasStandstillAssessment()) {
         standstillVeto = wheelAngleFusionPtr->isStandstill();
     }
 
