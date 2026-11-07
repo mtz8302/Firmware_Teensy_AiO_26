@@ -127,7 +127,7 @@ static inline float hbArticulationHalfDeg(float jointAngleDeg) {
 // L1 (2026-11-06): Obergrenze fuer die gemessene Lagrate, die im HALTEN weitergefuehrt
 // wird. 250 Grad/s liegt ueber allem, was eine Landmaschine physikalisch dreht (der
 // Testmaeher schafft bei 1 m/s und R_min 0,6 m rund 95 Grad/s) und unter dem, was ein
-// Falter der Dual-Lage erzeugt - Sprünge faengt ohnehin das kinematische Tor (attJumped).
+// Falter der Dual-Lage erzeugt - SprÃƒÂ¼nge faengt ohnehin das kinematische Tor (attJumped).
 static constexpr float HB_ATT_RATE_MAX_DEG_S = 250.0f;
 
 // ---------------------------------------------------------------------------
@@ -171,11 +171,17 @@ static float   s_pcDevDeg  = 0.0f;   // Abweichung, die das Sprungtor gemessen h
 static float   s_pcDevLim  = 0.0f;   // ... und seine Grenze
 static float   s_antLeadDeg = 0.0f;  // angewandter Antennen-Vorlauf (Stufe 1)
 static float   s_artHalfDeg = 0.0f;  // angewandte Knick-Korrektur gamma/2 (Stufe 2)
+static bool    s_artHalfHave = false; // wir KENNEN den Knick (auch eingefroren) - fuer PGN 253
 // 2026-11-06: gefilterter Knickwinkel aus (Kurs - Lage-Offset), dateiweit - die Getter fuer die
 // PGN-253-Ausgabe lesen ihn. AOG knickt die Maschine damit (CVehicle.cs: 0.5 * Winkel).
 static float   s_artEstDeg   = 0.0f;
 static bool    s_artEstValid = false;
 float HeadingBridge::getArticulationEstimateDeg() const { return s_artEstDeg; }
+// 2026-11-07: der ANGEWANDTE Knickwinkel (gamma) - ratenbegrenzt, eingefroren oder gerampt.
+// Das ist der Wert, den das Heading benutzt; PGN 253 muss DENSELBEN senden, sonst zeigt
+// AgOpenGPS einen anderen Knick als die Korrektur rechnet.
+float HeadingBridge::getAppliedArticulationDeg() const { return 2.0f * s_artHalfDeg; }
+bool  HeadingBridge::hasAppliedArticulation() const { return s_artHalfHave; }
 bool  HeadingBridge::hasArticulationEstimate()    const { return s_artEstValid; }
 // B10.54 (2026-10-25): ROHE Modellrate (vor dem P1b-Gate). Spalten-Audit: NICHT redundant -
 // 'yr' ist die GEGATETE Rate (0, wenn unterdrueckt), 'opp_yr' deckt nur den Fall "gegen die
@@ -1516,7 +1522,7 @@ void FLASHMEM HeadingBridge::applyMeasurement(float measDeg, float rDeg, uint8_t
     }
 
     // --- state sanity: re-seed instead of correcting the long way around -----
-    // Operator correction 2026-09-29 ("AOG zeigt RÃ¼ckwÃ¤rts, obwohl ich vorwÃ¤rts fuhr").
+    // Operator correction 2026-09-29 ("AOG zeigt RÃƒÆ’Ã‚Â¼ckwÃƒÆ’Ã‚Â¤rts, obwohl ich vorwÃƒÆ’Ã‚Â¤rts fuhr").
     // A heading that is more than reseedBeyondDeg away from a TRUSTED attitude is not a
     // measurement problem - the STATE is wrong (measured: psi walked 124 deg away from a
     // steady qf=4 antenna heading within 1.2 s during a reverse phase, and integrating it
@@ -2691,7 +2697,7 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // DERIVATIVE column. It is compared with the innovation at the next measurement,
     // where innovation ~ (steerScale - 1) * X + offset_rad * Q for a scale/offset error
     // - the second column is what makes the wheel angle offset separable from the scale
-    // (operator 2026-09-27: "die Ableitung der Heading-Ã„nderung zur Ã„nderung des
+    // (operator 2026-09-27: "die Ableitung der Heading-ÃƒÆ’Ã¢â‚¬Å¾nderung zur ÃƒÆ’Ã¢â‚¬Å¾nderung des
     // Lenkwinkels"), which matters because the VWAS re-trims its zero during a drive.
     // The gate gets the same increments in its own (short) window.
     // P1b (2026-09-30): not while the wheel angle is untrustworthy - then these
@@ -3025,13 +3031,34 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // Config::artEstApplyRateDegS: der rohe Schaetzwert springt zwischen 0,53 und +-33 Grad
     // (Gueltigkeitswechsel + empfindlicher Hebel), und jeder Sprung landet 1:1 in der Ausgabe.
     {
-        const float target = artEstValid ? (0.5f * artEstDeg)
-                                         : hbArticulationHalfDeg(lastWheelAngleDeg);
+        // 2026-11-07 (Betreiber): EINFRIEREN -> Karenz -> RAMP auf 0.
+        // Ist die Schaetzung kurz weg, wird der letzte Wert gehalten; erst nach
+        // config.artEstHoldMs wird mit artEstApplyRateDegS auf 0 gerampt.
+        // WICHTIG: der Rueckfall auf den GELENKWINKEL gilt nur noch, wenn dieser VERTRAUT
+        // ist (wheelQualityOkState). Vorher stand hier hbArticulationHalfDeg(lastWheelAngleDeg)
+        // ohne Qualitaetspruefung - mit dem offenen Analogeingang des Maehers (-91 Grad) waere
+        // das ein Sprung von -45 Grad ins Heading gewesen.
+        static uint32_t s_artHalfGoodMs = 0;
+        static bool     s_artHalfKnown  = false;
+        float target;
+        if (artEstValid) {
+            target = 0.5f * artEstDeg;
+            s_artHalfGoodMs = now;
+            s_artHalfKnown  = true;
+        } else if (s_artHalfKnown &&
+                   ((uint32_t)(now - s_artHalfGoodMs) < (uint32_t)config.artEstHoldMs)) {
+            target = s_artHalfDeg;                      // Karenz: einfrieren
+        } else if (wheelQualityOkState) {
+            target = hbArticulationHalfDeg(lastWheelAngleDeg);   // echter Geber als Rueckfall
+        } else {
+            target = 0.0f;                              // Rampe auf 0
+        }
         float dHalf = wrap180(target - s_artHalfDeg);
         const float maxHalf = config.artEstApplyRateDegS * ((dtS > 0.0f) ? dtS : 0.01f);
         if (dHalf >  maxHalf) { dHalf =  maxHalf; }
         if (dHalf < -maxHalf) { dHalf = -maxHalf; }
         s_artHalfDeg = wrap180(s_artHalfDeg + dHalf);
+        s_artHalfHave = s_artHalfKnown;                 // "wir kennen den Knick" (auch gehalten)
     }
 
     // 1a+1e (2026-10-10): Traeger-Kette statt psi. Lage (plausibel) -> FAHRTRICHTUNG aus den
@@ -3337,7 +3364,7 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // ("the smoothed value must never lag a real turn"). Under the trees the raw
         // attitude carries single-frame artifacts of 2...20 deg while qf stays 4
         // (measured 2026-09-30 ... 10-02), so each of them larger than 3 deg reached
-        // AgOpenGPS as a jump - the operator's "SprÃ¼nge in den AOG-Daten". The snap is
+        // AgOpenGPS as a jump - the operator's "SprÃƒÆ’Ã‚Â¼nge in den AOG-Daten". The snap is
         // now allowed only while the RECEIVER itself reports a clean epoch
         // (Config::outQualityGateEnabled / uniHdgSdGoodDeg). On a degraded epoch the
         // same residual is instead rate-limited by kinematicRateBoundDegS() *
@@ -3833,8 +3860,8 @@ void FLASHMEM HeadingBridge::updateDirectionState(uint32_t now) {
     const float raw = fabsf(wrap180(psi - travel));   // 0 ... 180 deg
 
     // --- independent witness (operator correction 2026-09-29) ----------------
-    // "AOG zeigt RÃ¼ckwÃ¤rts, obwohl ich vorwÃ¤rts fuhr" and "die Richtung stimmt nur kurz
-    // nicht, wenn der Empfang zurÃ¼ckkommt". Measured in the 06:31 log: ONE bogus
+    // "AOG zeigt RÃƒÆ’Ã‚Â¼ckwÃƒÆ’Ã‚Â¤rts, obwohl ich vorwÃƒÆ’Ã‚Â¤rts fuhr" and "die Richtung stimmt nur kurz
+    // nicht, wenn der Empfang zurÃƒÆ’Ã‚Â¼ckkommt". Measured in the 06:31 log: ONE bogus
     // evaluation at 0.47 m/s (0.25 m baseline, position noise) set REVERSE and kept it
     // for 50 s, because everything the decision is made from is then mirrored - the
     // system confirmed itself.
@@ -4498,8 +4525,14 @@ void FLASHMEM HeadingBridge::updatePathChord(uint32_t now, float speedMps, float
             // B10.50: die Freigabe haengt nicht mehr an der Lage, sondern nur daran, dass die
             // neue Richtung chordGateAcceptMs lang STEHEN bleibt (dieselbe Begruendung wie
             // oben: eine echte Drehung bleibt, ein Sprung kommt und geht).
-            const bool attLooksOk = (attitudeQualityNow() != 1u);
-            if (!(attLooksOk && ((uint32_t)(now - chordGateRejectMs) >= 3000u))) {
+            // 2026-11-07 (Feldbefund Log 11-07): Hier stand "attLooksOk UND 3 s". Damit
+            // sperrte eine DEGRADIERTE Lage die Sehne DAUERHAFT - und die Sehne ist die
+            // unabhaengige Referenz, die gerade dann gebraucht wird (gemessen: pc_rej=8 in
+            // 551 Frames, pc_ok nur 15,6 %, obwohl die Positionen sauber waren).
+            // Jetzt entscheidet allein die ZEIT: haelt die neue Richtung 3 s, ist sie echt
+            // (eine echte Drehung bleibt, ein Sprung kommt und geht). Die Lage bleibt, was
+            // sie ist - eine Verkuerzung des Weges (limitDeg oben), kein Tor.
+            if ((uint32_t)(now - chordGateRejectMs) < 3000u) {
                 status.pathChordJumpRejected = true;
                 s_pcRej = 8;                   // Sprungtor
                 return;                        // kein Kurs aus einem Sprung

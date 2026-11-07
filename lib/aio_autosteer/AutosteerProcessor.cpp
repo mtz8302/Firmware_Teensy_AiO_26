@@ -1930,8 +1930,12 @@ void AutosteerProcessor::sendPGN253() {
     // und halbiert ihn selbst (CVehicle.cs: modelSteerAngle = 0.5 * actualSteerAngleDegrees).
     // Mit echtem Sensor bleibt alles wie bisher (Qualitaet > 0).
     float angleForAog = actualAngle;
-    if ((steerAngleOutQuality <= 0.0f) && headingBridge.hasArticulationEstimate()) {
-        angleForAog = headingBridge.getArticulationEstimateDeg();
+    // 2026-11-07: den ANGEWANDTEN Knick senden (ratenbegrenzt/eingefroren/gerampt), nicht die
+    // rohe Schaetzung. Zwei Gruende: (a) AOG soll denselben Knick zeichnen, den die
+    // Heading-Korrektur rechnet; (b) faellt die Schaetzung kurz aus, ist der gehaltene Wert
+    // richtig - und NICHT der analoge Lenkwinkel, der auf diesem Fahrzeug gar nicht existiert.
+    if ((steerAngleOutQuality <= 0.0f) && headingBridge.hasAppliedArticulation()) {
+        angleForAog = headingBridge.getAppliedArticulationDeg();
     }
     int16_t actualSteerAngle = (int16_t)(angleForAog * 100.0f);  // Actual angle * 100
     int16_t heading = 0;            // Deprecated - sent by GNSS

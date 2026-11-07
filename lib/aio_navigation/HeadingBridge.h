@@ -626,6 +626,10 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // Die Projektion von AOG (Vorderteil = heading - gamma/2) braucht keine Spruenge.
     // Messung: "ruckelig" 11 % -> 7 %, stehende Frames 24 -> 17.
     float    artEstApplyRateDegS = 25.0f;  // Grad/s fuer das angewandte gamma/2
+    // 2026-11-07 (Betreiber): EINFRIEREN -> Karenz -> Rampe. Ist die Schaetzung kurz weg,
+    // wird der letzte angewandte Wert so lange gehalten; erst danach wird mit
+    // artEstApplyRateDegS auf 0 gerampt (kein Sprung, kein Stehenbleiben).
+    float    artEstHoldMs = 1000.0f;
     // 2026-11-06f (A/B im Sim, Ref-Log knick_125_241): 15 Grad/s -> 15 ruckelig / 7 steht,
     // 25 -> 15 / 6, 40 -> 17 / 7, 60 -> 19 / 7. 25 ist der beste Kompromiss: die Darstellung
     // folgt schnell genug (voller Einschlag in ~0,7 s) und die Schaetzung zappelt nicht durch.
@@ -1329,7 +1333,14 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
         // Maschinenkonstante aus dem Build; ein eingetragener Wert gewinnt immer.
         static constexpr float antennaPivotDefaultM = 0.91f;
 
-        static constexpr float dualHeadingOffsetDefaultDeg = 88.3f;
+        // 2026-11-07 (Betreiber): Default +90 statt der gemessenen 88,3. Begruendung: die beiden
+    // Antennen sind IMMER QUER montiert - nur so liefert die Basislinie einen Roll (laengs
+    // bekaeme man Pitch). Quer heisst: Basislinie senkrecht zur Laengsachse = 90 Grad.
+    // Der Wert 88,3 war die Feinmessung EINER Maschine und kommt ueber die vehicle.xml
+    // (setGPS_dualHeadingOffset) bzw. die Fahrzeugseite; er darf hier nicht der Default sein,
+    // sonst startet jedes andere Fahrzeug 1,7 Grad schief - und "korrigiert" jemand den
+    // Default spaeter auf 0, steht die Maschine 90 Grad quer.
+    static constexpr float dualHeadingOffsetDefaultDeg = 90.0f;
         float dualHeadingOffsetDeg = dualHeadingOffsetDefaultDeg;
     // ---------------------------------------------------------------------------
     // Effektive Wheelbase fuer das MODELL (operator decision 2026-10-05).
@@ -1872,6 +1883,12 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // AOG halbiert ihn selbst (CVehicle.cs: modelSteerAngle = 0.5 * actualSteerAngleDegrees).
     float getArticulationEstimateDeg() const;
     bool  hasArticulationEstimate() const;
+    // 2026-11-07: der ANGEWANDTE Knickwinkel (gamma, ratenbegrenzt/eingefroren/gerampt) -
+    // das ist der Wert, der ins Heading und nach PGN 253 geht. Getrennt von der rohen
+    // Schaetzung, damit AOG und Heading-Korrektur IMMER dasselbe zeigen. Gamma (nicht
+    // gamma/2), weil AgOpenGPS selbst halbiert (CVehicle.cs).
+    float getAppliedArticulationDeg() const;
+    bool  hasAppliedArticulation() const;
 
     Config& getConfig() { return config; }
     const Config& getConfig() const { return config; }

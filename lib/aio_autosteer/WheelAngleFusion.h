@@ -34,18 +34,19 @@ public:
     // Configuration structure
     struct Config {
         // Vehicle parameters
-        // Wheelbase. Fruehere Fassung: 2.50 m als "besserer generischer Default
-        // als der Wert EINER Maschine". Das war die falsche Abwaegung, sobald
-        // eine geleerte Firmware ohne Import in Betrieb geht: mit 2,50 statt
-        // 0,92 m rechnet das Knicklenker-Modell die Kruemmung 2,7-fach zu klein,
-        // und die Bridge verwirft dann die eigenen, richtigen Messungen - ein
-        // Fehler, der wie ein Sensorproblem aussieht.
+        // 2026-11-07 (Betreiber, NEUE Vorgabe): Default = "normale Traktor-Werte".
+        // ACHTUNG - das kehrt die Entscheidung vom 2026-11-02 um (siehe unten), bewusst:
+        // die Fahrzeugseite /vwas ist seit 2026-11-07 auch OHNE Motor erreichbar
+        // (AutosteerProcessor laesst das VWAS-Objekt am Leben), also koennen die Werte der
+        // Maschine eingegeben bzw. per vehicle.xml importiert werden. Der Maeher BRAUCHT
+        // 92 cm / Typ 2 / 75 Grad - das sind seine WERTE, nicht die eines frischen Boards.
         //
-        // Betreiber-Entscheidung 2026-11-02: in ALLEN Faellen muessen brauchbare
-        // Defaults hinterlegt sein. Also der gemessene Wert der Maschine (Stiga,
-        // vehicle.xml: 0.92). Andere Fahrzeuge kommen ueber den vehicle.xml-
-        // Import ("Radstand" auf dieser Seite) oder von Hand.
-        float wheelbase = 0.92f;
+        // Der alte Text (2026-11-02, gleicher Betreiber) lautete: "in ALLEN Faellen muessen
+        // brauchbare Defaults hinterlegt sein" -> damals 0.92 m, weil eine geleerte Firmware
+        // ohne Import mit 2,50 m die Kruemmung 2,7-fach zu klein rechnet und die Bridge dann
+        // die eigenen richtigen Messungen verwirft (sieht aus wie ein Sensorproblem).
+        // Diese Gefahr besteht weiter, sie ist jetzt durch die erreichbare Seite abgefangen.
+        float wheelbase = 2.50f;
 
         // Vehicle kinematic type - matches AgOpenGPS's own setVehicle_vehicleType
         // values (confirmed from real exported vehicle.xml files):
@@ -53,11 +54,11 @@ public:
         //   2 = Articulated (center-pivot / "Knicklenker")
         // Other AgOpenGPS vehicleType values (e.g. Harvester, Trike) are not
         // handled here yet and fall back to the Standard (Ackermann) model.
-        // 2026-11-02: Default auf 2 (Knicklenker) - die Maschine dieser Firmware.
-        // Mit 0 (Standard) wuerde eine geleerte Firmware die Kruemmung ueber die
-        // Ackermann-Formel rechnen, also 2*v*tan(delta)/L statt v*tan(delta)/L -
-        // doppelt so viel Gierrate bei gleichem Winkel.
-        uint8_t vehicleType = 2;
+        // 2026-11-07 (Betreiber): Default 0 = Standard/Ackermann. Die Maschine dieser
+        // Firmware ist der Knicklenker (Typ 2) und stellt das auf der Fahrzeugseite ein;
+        // eine geleerte Firmware soll dagegen NICHT die Maehwerks-Geometrie annehmen.
+        // Siehe die Anmerkung bei wheelbase (Entscheidung 2026-11-02 aufgehoben).
+        uint8_t vehicleType = 0;
         
         // Motor calibration
         //
@@ -97,11 +98,11 @@ public:
         // the -127..+128 display mapping in getScaledAngle(); the actual wire
         // format of PGN 253 is degrees * 100, so a mismatch here does not
         // corrupt the steering angle itself.
-        // 2026-11-02: 40 -> 75 Grad, der GEMESSENE Vollausschlag der Maschine
-        // (B10.72: vehicle.xml sagt 45, real sind es 75). Der Wert klemmt die
-        // Ausgabe in updateKalmanFilter - mit 40 waere jede Kurve ueber 40 Grad
-        // abgeschnitten, also genau der Bereich, in dem der Knicklenker arbeitet.
-        float maxSteeringAngle = 75.0f;
+        // 2026-11-07 (Betreiber): Default 40 Grad (Traktor). Der Maeher hat 75 Grad -
+        // GEMESSEN (B10.72: vehicle.xml sagt 45, real 75) und wird auf der Fahrzeugseite
+        // eingetragen. Der Wert klemmt die Ausgabe in updateKalmanFilter: mit 40 waere
+        // beim Maeher jede Kurve ueber 40 Grad abgeschnitten.
+        float maxSteeringAngle = 40.0f;
 
         // --- Zero-point observer (Stufe 2) ---------------------------------
         // Sidehill gain: degrees of steering angle per degree of roll, i.e.
@@ -777,7 +778,7 @@ private:
     // about +-1 deg of scatter, and a hold rate well above the drift would start
     // tracking that scatter as an oscillation of the zero. Deliberately not
     // slower: below the drift rate the residual would grow until RE-OPEN fires,
-    // which is the 0 -> 2.5 deg sawtooth the operator saw in the Bäumen log.
+    // which is the 0 -> 2.5 deg sawtooth the operator saw in the BÃ¤umen log.
     static constexpr float    ZO_HOLD_RATE_DEG_PER_S = 0.04f;
     static constexpr float ZO_LOCK_TOLERANCE  = 0.25f; // deg, residual stability
     static constexpr uint8_t  ZO_LOCK_FITS       = 3;
@@ -898,7 +899,7 @@ private:
     /// the roll spread of the last completed fit.
     float zeroAcquireRate() const;
 
-    float    zoBinSum[ZO_BINS];        // Σ (reported angle − bA) per roll bin
+    float    zoBinSum[ZO_BINS];        // Î£ (reported angle âˆ’ bA) per roll bin
     uint16_t zoBinCount[ZO_BINS];      // samples per roll bin
     // Window-level sum of the GPS-implied angle that was SUBTRACTED sample by
     // sample (P1). Logged as bAmean: it is the diagnostic that separates "the
