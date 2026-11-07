@@ -76,7 +76,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <h3>Vehicle geometry</h3>
     <div class="cols">
       <div>
-        <div class="field"><label>Wheelbase (m)</label><input type="number" step="0.01" id="wheelbase"></div>
+        <div class="field"><label>Wheelbase (cm)</label><input type="number" step="1" id="wheelbase"></div>
         <div class="xmlval" id="xml_wheelbase" onclick="applyXml('wheelbase')"></div>
       </div>
       <div>
@@ -93,7 +93,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
         <div class="xmlval" id="xml_vehicleType" onclick="applyXml('vehicleType')"></div>
       </div>
       <div>
-        <div class="field"><label>Antenna ahead of pivot (m)</label><input type="number" step="0.01" id="antennaPivotM"></div>
+        <div class="field"><label>Antenna ahead of pivot (cm)</label><input type="number" step="1" id="antennaPivotM"></div>
         <div class="xmlval" id="xml_antennaPivotM" onclick="applyXml('antennaPivotM')"></div>
       </div>
       <div>
@@ -125,8 +125,8 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
       and AOG use the same formula.</div>
     <div class="cols">
       <div>
-        <div class="field"><label>Antenna spacing (m)</label>
-          <input type="number" step="0.001" id="baselineMeters">
+        <div class="field"><label>Antenna spacing (cm)</label>
+          <input type="number" step="0.5" id="baselineMeters">
         </div>
         <div class="meas" id="measBaseline">measured: -</div>
       </div>
@@ -141,7 +141,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <div class="hint"><b>Antenna spacing:</b> the mechanical distance between the two antenna
       phase centres. It is the <b>reference</b> for the plausibility test of the solved
       baseline: a length far off it means the heading solution is not trustworthy and is
-      dropped. <b>Measured: 0.711 m</b> (15 drives, 13 065 RTK frames). Without an entry
+      dropped. <b>Measured: 71.1 cm</b> (15 drives, 13 065 RTK frames). Without an entry
       this build value applies. <b>0 = test off</b>, the reference is learned again (the
       fragile old path - escape hatch only).</div>
     <div class="hint"><b>Dual heading offset:</b> the angle between the antenna baseline and
@@ -160,10 +160,12 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 <script>
 function loadConfig() {
   fetch('/api/vwas/config').then(r => r.json()).then(cfg => {
-    document.getElementById('wheelbase').value = cfg.wheelbase;
+    // API in METERN, Feld in CM (siehe LEN_CM oben).
+    document.getElementById('wheelbase').value = roundLen('wheelbase', toField('wheelbase', cfg.wheelbase));
     document.getElementById('maxSteeringAngle').value = cfg.maxSteeringAngle;
     document.getElementById('vehicleType').value = cfg.vehicleType;
-    document.getElementById('antennaPivotM').value = (cfg.antennaPivotM === undefined ? 0 : cfg.antennaPivotM);
+    document.getElementById('antennaPivotM').value =
+      roundLen('antennaPivotM', toField('antennaPivotM', (cfg.antennaPivotM === undefined ? 0 : cfg.antennaPivotM)));
     document.getElementById('sideHillGain').value = cfg.sideHillGain;
     gainInfo(cfg);
   }).catch(e => {
@@ -197,10 +199,11 @@ function gainInfo(cfg) {
 
 function saveConfig() {
   const body = {
-    wheelbase: parseFloat(document.getElementById('wheelbase').value),
+    // Felder in CM -> API in METERN.
+    wheelbase: fromField('wheelbase', parseFloat(document.getElementById('wheelbase').value)),
     maxSteeringAngle: parseFloat(document.getElementById('maxSteeringAngle').value),
     vehicleType: parseInt(document.getElementById('vehicleType').value),
-    antennaPivotM: parseFloat(document.getElementById('antennaPivotM').value) || 0,
+    antennaPivotM: fromField('antennaPivotM', parseFloat(document.getElementById('antennaPivotM').value) || 0),
     sideHillGain: parseFloat(document.getElementById('sideHillGain').value)
   };
   fetch('/api/vwas/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
@@ -226,6 +229,15 @@ function saveConfig() {
 // unter jedem Feld steht "aus XML: <Wert>" (gelb, wenn er abweicht). Antippen
 // uebernimmt EINEN Wert, "Apply all XML values" applies them all. Nothing is saved until "Save".
 var xmlVals = {};
+// EINHEITEN (2026-11-06, Betreiber): die Felder fuehren Laengen in **cm** - so zeigt
+// AgOpenGPS sie in seiner Oberflaeche an (`mf.m2InchOrCm` in ConfigVehicle.Designer.cs).
+// API und AOGs vehicle.xml fuehren sie dagegen in **m** (AOG speichert
+// `setVehicle_wheelbase` in Metern und rechnet nur fuer die Anzeige um). Umgerechnet wird
+// an genau diesen zwei Stellen - nirgends sonst, sonst rechnet man doppelt.
+var LEN_CM = { wheelbase: 100, antennaPivotM: 100, baselineMeters: 100 };
+function toField(key, meters) { return (key in LEN_CM) ? meters * LEN_CM[key] : meters; }
+function fromField(key, value) { return (key in LEN_CM) ? value / LEN_CM[key] : value; }
+function roundLen(key, v) { return (key in LEN_CM) ? Math.round(v * 10) / 10 : v; }
 var xmlLabels = { wheelbase: 'Wheelbase', maxSteeringAngle: 'Steering angle',
                   vehicleType: 'Vehicle type', antennaPivotM: 'Antenna position',
                   headingOffsetDeg: 'Dual heading offset', sideHillGain: 'Side hill gain' };
@@ -241,19 +253,20 @@ function renderXmlGhosts() {
     if (!box) continue;
     if (!(key in xmlVals)) { box.style.display = 'none'; box.innerText = ''; continue; }
     var cur = fieldValue(key);
-    var nv = xmlVals[key];
+    var nv = toField(key, xmlVals[key]);
     var isBool = (typeof nv === 'boolean');
     var diff = isBool ? (nv !== cur) : (!isFinite(cur) || Math.abs(nv - cur) > 1e-6);
     box.style.display = 'block';
     box.className = 'xmlval' + (diff ? ' diff' : '');
-    box.innerText = 'from XML: ' + (isBool ? (nv ? 'yes' : 'no') : nv) +
+    var unitTxt = (key in LEN_CM) ? ' cm' : '';
+    box.innerText = 'from XML: ' + (isBool ? (nv ? 'yes' : 'no') : roundLen(key, nv)) + unitTxt +
                     (diff ? '   -> tap to apply' : '   (identical)');
   }
 }
 
 function applyXml(key) {
   if (!(key in xmlVals)) return;
-  document.getElementById(key).value = xmlVals[key];
+  document.getElementById(key).value = roundLen(key, toField(key, xmlVals[key]));
   renderXmlGhosts();
   document.getElementById('importResult').innerText =
     xmlLabels[key] + ' applied - NOT saved yet (press "Save").';
@@ -262,7 +275,7 @@ function applyXml(key) {
 function applyAllXml() {
   var n = 0;
   for (var key in xmlVals) {
-    document.getElementById(key).value = xmlVals[key];
+    document.getElementById(key).value = roundLen(key, toField(key, xmlVals[key]));
     n++;
   }
   renderXmlGhosts();
@@ -360,7 +373,7 @@ function pollStatus() {
       : 'measured: no sample yet';
     var mb = document.getElementById('measBaseline');
     if (mb) mb.innerText = (s.bridgeBaselineM > 0.01)
-      ? 'measured: ' + s.bridgeBaselineM.toFixed(3) + ' m' +
+      ? 'measured: ' + (s.bridgeBaselineM * 100).toFixed(1) + ' cm' +
         (s.bridgeBaselineDevPct !== 0 ? '  (deviation ' + s.bridgeBaselineDevPct.toFixed(1) + ' %)' : '')
       : 'measured: not provided by the receiver';
   }).catch(e => {
@@ -373,26 +386,27 @@ function pollStatus() {
 function loadGeometry() {
   fetch('/api/bridge/geometry').then(r => r.json()).then(b => {
     // 0 = "learned": leave the field EMPTY, so nobody re-enters a 0 by accident.
+    // Feld in CM, API in METERN (siehe LEN_CM oben).
     document.getElementById('baselineMeters').value =
-      (b.meters > 0.001 ? b.meters.toFixed(3) : '');
+      (b.meters > 0.001 ? roundLen('baselineMeters', toField('baselineMeters', b.meters)) : '');
     document.getElementById('headingOffsetDeg').value =
       (typeof b.offsetDeg === 'number' ? b.offsetDeg.toFixed(1) : '');
     let t = '--- Antenna spacing ---\n';
     if (b.set) {
-      t += 'FIXED reference ' + b.meters.toFixed(3) + ' m (stored in EEPROM)';
+      t += 'FIXED reference ' + (b.meters * 100).toFixed(1) + ' cm (stored in EEPROM)';
     } else if (b.meters > 0.001) {
-      t += 'FIXED reference ' + b.meters.toFixed(3) + ' m (build value, nothing in EEPROM)';
+      t += 'FIXED reference ' + (b.meters * 100).toFixed(1) + ' cm (build value, nothing in EEPROM)';
     } else {
       t += 'NO fixed reference - it is LEARNED from the receiver';
     }
     t += '\n';
-    t += 'Reference in use: ' + (b.refM > 0.01 ? b.refM.toFixed(3) + ' m' : 'none yet') + '\n';
+    t += 'Reference in use: ' + (b.refM > 0.01 ? (b.refM * 100).toFixed(1) + ' cm' : 'none yet') + '\n';
     t += 'Solved by receiver: ' +
-         (b.lenM > 0.01 ? b.lenM.toFixed(3) + ' m' : 'not provided') +
+         (b.lenM > 0.01 ? (b.lenM * 100).toFixed(1) + ' cm' : 'not provided') +
          (b.refM > 0.01 && b.lenM > 0.01 ? '   deviation ' + b.devPct.toFixed(1) + ' %' : '') + '\n';
     if (typeof b.suggestM === 'number' && b.suggestCount > 0) {
       t += 'SELF-MEASURED (' + b.suggestCount + ' clean frames, no reference): ' +
-           b.suggestM.toFixed(3) + ' m' +
+           (b.suggestM * 100).toFixed(1) + ' cm' +
            (b.refSuspect ? '   -> DIFFERS from the fixed reference!' : '   -> matches') + '\n';
     } else {
       t += 'Self-measured: no clean frames yet (drive first)\n';
@@ -430,12 +444,12 @@ function saveGeometry() {
   const body = {};
   const rawM = document.getElementById('baselineMeters').value.trim();
   if (rawM !== '') {
-    const m = parseFloat(rawM);
-    if (!isFinite(m)) {
+    const cm = parseFloat(rawM);
+    if (!isFinite(cm)) {
       document.getElementById('geometryResult').innerText = 'Antenna spacing: not a number';
       return;
     }
-    body.meters = m;
+    body.meters = fromField('baselineMeters', cm);   // Feld in CM -> API in METERN
   }
   const rawO = document.getElementById('headingOffsetDeg').value.trim();
   if (rawO !== '') {
@@ -457,7 +471,7 @@ function saveGeometry() {
     .then(res => {
       if (res.status === 'saved') {
         document.getElementById('geometryResult').innerText =
-          'Saved: antenna spacing ' + res.meters.toFixed(3) + ' m, offset ' +
+          'Saved: antenna spacing ' + (res.meters * 100).toFixed(1) + ' cm, offset ' +
           res.offsetDeg.toFixed(1) + ' deg.';
         loadGeometry();
       } else {
@@ -477,7 +491,7 @@ function useMeasuredRef() {
     .then(res => {
       if (res.status === 'saved') {
         document.getElementById('geometryResult').innerText =
-          'Applied: ' + res.meters.toFixed(3) + ' m as the FIXED reference (measured from ' +
+          'Applied: ' + (res.meters * 100).toFixed(1) + ' cm as the FIXED reference (measured from ' +
           res.frames + ' clean frames). Now in the EEPROM.';
         loadGeometry();
       } else {
