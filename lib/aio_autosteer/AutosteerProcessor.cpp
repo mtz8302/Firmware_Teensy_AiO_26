@@ -53,6 +53,109 @@ AutosteerProcessor* autosteerPTR = nullptr;
 // Erkennung), muss s_vwasRunning pruefen - nicht nur den Zeiger und nicht nur das Flag.
 static bool s_vwasRunning = false;
 
+// ---------------------------------------------------------------------------
+// Plausibilitaetsnetz fuer den ANALOGEN Lenkwinkelgeber (2026-11-07)
+// ---------------------------------------------------------------------------
+// Ein NICHT verdrahteter Geber liefert einen plausibel aussehenden, KONSTANTEN Wert mit
+// voller Qualitaet - Feldbefund 11-07: -91 Grad bei maxSteeringAngle 75, ueber 6 Minuten
+// unveraendert, und PGN 253 hat ihn als Lenkwinkel an AgOpenGPS geschickt.
+// Zwei Tests, beide ohne jede Einstellung:
+//   1) BEREICH: |Winkel| > maxSteeringAngle + 5 Grad ist mechanisch unmoeglich -> sofort.
+//   2) BEWEGUNG (Betreiber-Vorgabe: "langsam pruefen"): dreht die Maschine im Fenster um
+//      mehr als kWasWatchTurnDeg, waehrend sich der Winkel um weniger als kWasWatchAngleDeg
+//      bewegt, ist kein Geber da. Er gilt wieder als vorhanden, sobald er sich deutlich
+//      bewegt (kWasWatchRecoverDeg).
+// Die Drehung kommt aus der DUAL-LAGE (gnssProcessor.getData().dualHeading) - das ist die
+// einzige unabhaengige Drehref erenz, die ohne Lenkwinkel zur Verfuegung steht. Der Test ist
+// damit auch auf Single-Antenne harmlos: ohne Lage dreht "turnDeg" nicht, also kann er
+// nichts als fehlend erklaeren.
+// NAECHSTE STUFE (Betreiber, noch nicht gebaut): zusaetzlich pruefen, ob der BERECHNETE
+// Winkel sich aendert, waehrend der analoge steht.
+static constexpr uint32_t kWasWatchWindowMs   = 10000;  // Fensterlaenge (Betreiber: "langsam")
+static constexpr float    kWasWatchTurnDeg    = 30.0f;  // so viel muss die Maschine drehen
+static constexpr float    kWasWatchAngleDeg   = 1.0f;   // ... bei so wenig Winkelbewegung
+static constexpr float    kWasWatchRecoverDeg = 2.0f;   // so viel Bewegung -> wieder vorhanden
+// Messung an vier Feld-Logs zur Wahl des Zuschlags (11-07): Maeher ohne Geber |wheel| =
+// 91,0 Grad (100 % der Frames ueber 45 und ueber 50 Grad); Ackermann-Fahrzeuge MIT echtem
+// Geber erreichen 25,7 / 40,6 / 44,0 Grad. Bei maxSteeringAngle 40 liegt die Grenze mit
+// +5 bei 45 Grad - nur 1 Grad ueber dem groessten gemessenen ECHTEN Wert. Mit +10 (50 Grad)
+// bleiben 6 Grad Luft und der Maeher (91) wird trotzdem sofort erkannt.
+static constexpr float    kWasRangeSlackDeg   = 10.0f;  // Zuschlag auf maxSteeringAngle
+
+static inline float wasWrap180(float a) {
+    while (a > 180.0f) { a -= 360.0f; }
+    while (a < -180.0f) { a += 360.0f; }
+    return a;
+}
+
+struct WasWatch {
+    bool     sensorOk     = true;    // Ergebnis: ein echter Geber dreht mit
+    bool     primed       = false;
+    float    prevHdgDeg   = 0.0f;
+    float    prevAngleDeg = 0.0f;
+    uint32_t prevMs       = 0;
+    uint32_t windowMs     = 0;
+    float    turnDeg      = 0.0f;    // Summe |Lage-Aenderung| im Fenster
+    float    angleMoveDeg = 0.0f;    // Summe |Winkel-Aenderung| im Fenster
+};
+static WasWatch g_wasWatch;
+
+// Rueckgabe false = der analoge Geber ist NICHT als vorhanden zu behandeln.
+static bool wasSensorPlausible(float angleDeg, float maxSteerDeg, uint32_t now) {
+    // 1) Bereich - sofort, ohne Fenster.
+    if (fabsf(angleDeg) > (maxSteerDeg + kWasRangeSlackDeg)) {
+        if (g_wasWatch.sensorOk) {
+            LOG_WARNING(EventSource::AUTOSTEER,
+                        "WAS: %.1f Grad liegt ausserhalb +-%.0f Grad (maxSteeringAngle) - der "
+                        "analoge Geber gilt als NICHT vorhanden",
+                        (double)angleDeg, (double)maxSteerDeg);
+        }
+        g_wasWatch.sensorOk = false;
+        return false;
+    }
+    // 2) Bewegung - ueber ein Fenster.
+    const float hdg = gnssProcessor.getData().dualHeading;
+    if (!g_wasWatch.primed) {
+        g_wasWatch.primed       = true;
+        g_wasWatch.prevHdgDeg   = hdg;
+        g_wasWatch.prevAngleDeg = angleDeg;
+        g_wasWatch.prevMs       = now;
+        return g_wasWatch.sensorOk;
+    }
+    const uint32_t dtMs = now - g_wasWatch.prevMs;
+    if (dtMs < 5u) { return g_wasWatch.sensorOk; }        // keine verwertbare Zeitbasis
+    g_wasWatch.turnDeg      += fabsf(wasWrap180(hdg - g_wasWatch.prevHdgDeg));
+    g_wasWatch.angleMoveDeg += fabsf(angleDeg - g_wasWatch.prevAngleDeg);
+    g_wasWatch.windowMs     += dtMs;
+    g_wasWatch.prevHdgDeg    = hdg;
+    g_wasWatch.prevAngleDeg  = angleDeg;
+    g_wasWatch.prevMs        = now;
+
+    // Rueckkehr: der Geber bewegt sich wieder deutlich.
+    if (!g_wasWatch.sensorOk && (g_wasWatch.angleMoveDeg > kWasWatchRecoverDeg)) {
+        g_wasWatch.sensorOk = true;
+        LOG_INFO(EventSource::AUTOSTEER,
+                 "WAS: analoger Geber bewegt sich wieder (%.1f Grad im Fenster) - wieder "
+                 "als vorhanden behandelt", (double)g_wasWatch.angleMoveDeg);
+    }
+    // Auswertung am Fensterende.
+    if (g_wasWatch.windowMs >= kWasWatchWindowMs) {
+        if (g_wasWatch.sensorOk &&
+            (g_wasWatch.turnDeg > kWasWatchTurnDeg) &&
+            (g_wasWatch.angleMoveDeg < kWasWatchAngleDeg)) {
+            g_wasWatch.sensorOk = false;
+            LOG_WARNING(EventSource::AUTOSTEER,
+                        "WAS: Maschine dreht %.0f Grad, der analoge Geber bewegt sich aber nur "
+                        "%.1f Grad - kein Geber vorhanden (Lenkwinkel wird berechnet)",
+                        (double)g_wasWatch.turnDeg, (double)g_wasWatch.angleMoveDeg);
+        }
+        g_wasWatch.turnDeg      = 0.0f;
+        g_wasWatch.angleMoveDeg = 0.0f;
+        g_wasWatch.windowMs     = 0;
+    }
+    return g_wasWatch.sensorOk;
+}
+
 // Vorwaertsdeklaration: definiert weiter unten im VWAS-Persistenz-Block (gleicher
 // unnamed namespace). Wird schon in initializeFusion() als Hook gesetzt, also
 // bevor die Definition im Quelltext steht.
@@ -1596,6 +1699,19 @@ void AutosteerProcessor::selectSteerAngle() {
         // unhealthy fusion falls back to reports 0.
         wheelQuality = configManager.getINSUseFusion() ? 0.0f : 100.0f;
         angleSource = 0;
+    }
+
+    // --- Plausibilitaetsnetz fuer den ANALOGEN Geber (2026-11-07) ------------------------
+    // Gilt fuer ALLE Wege, die den analogen Eingang benutzen: Keya mit keyaWasSource=0,
+    // Nicht-Keya-Analog und den letzten else-Zweig. Ein offener ADC-Pin liefert einen
+    // plausibel aussehenden, konstanten Wert mit voller Qualitaet (Feld: -91 Grad).
+    if ((angleSource == 0) && (wheelQuality > 0.0f)) {
+        const float maxSteer = (wheelAngleFusionPtr != nullptr)
+                             ? wheelAngleFusionPtr->getConfig().maxSteeringAngle
+                             : 40.0f;
+        if (!wasSensorPlausible(selectedAngle, maxSteer, millis())) {
+            wheelQuality = 0.0f;
+        }
     }
 
     // AgOpenGPS's Zero-WAS button and Smart WAS auto-calibration are
