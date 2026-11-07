@@ -3405,10 +3405,20 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                 outPendSign = sgn;
                 outPendMag = mag;
                 // Zeitbasiert (10-12): Bestaetigungsdauer in ms, nicht in Frames.
-                const float pendMs = (float)outPendCount *
-                                     ((dtS > 0.0f) ? (dtS * 1000.0f) : 100.0f);
+                // B10.88 (2026-11-07): Die Zeit laeuft ab dem BEGINN der Bestaetigung, nicht ab
+                // dem laufenden Frame. Vorher stand hier `pendMs = outPendCount * dt` - und weil
+                // outPendCount beim ERSTEN Frame des Pendels bereits 1 ist, ergab das bei 10 Hz
+                // genau 100 ms und erfuellte `>= outSnapConfirmMs (100)` SOFORT. Der Halte-Zweig
+                // hat damit nie gehalten: outSnapConfirmMs war wirkungslos und jedes
+                // Ein-Frame-Artefakt ging als Sprung durch (der Betreiber-Symptomfall).
+                // Mit `now - outHoldSinceMs` ist der erste Frame 0 ms (haelt), der zweite 100 ms
+                // (bestaetigt) - genau die dokumentierte Verzoegerung von EINEM Bestaetigungsframe.
+                // outSnapConfirmMs = 0 bleibt "sofort" (0 >= 0), also das alte Verhalten.
+                // outPendCount bleibt als Zaehler fuer die Diagnose stehen, steuert aber nichts mehr.
+                const float pendMs = (float)(now - outHoldSinceMs);
                 confirmed = (pendMs >= (float)config.outSnapConfirmMs) ||
-                            ((now - outHoldSinceMs) >= config.outHoldMaxMs);
+                            (pendMs >= (float)config.outHoldMaxMs);
+
             } else {
                 outPendCount = 0;
                 outPendSign = 0;
