@@ -76,6 +76,19 @@ Aenderungen: v1.0.0 Erstanlage. Versionierung: MAJOR Struktur, MINOR Inhalt, **P
 (VWAS-Ereignisse) · `HrLog.ps1` (Spaltenuebersicht) · `%TEMP%\_fence*.ps1` (Zaun/Treue,
 pfadbasiert klassifiziert) · `_fieldwheel.ps1` (Nullpunkt auf Geraden).
 
+**Neu 2026-11-07** (alle im Sim-Repo unter `tools/analysis/`):
+* `att_why.ps1` — leitet ab, WARUM eine Epoche gedrosselt war (`qf`, `uni_hdgsd`,
+  `baseline_dev_pct`); warnt, wenn ein Frame ohne bekannte Klausel gedrosselt ist (B10.92).
+* `out_vs_path.ps1` — Ausgabe gegen einen unabhaengigen Kurs; mit `-MaxRateDegS 2` nur
+  Geradeaus, das trennt Nachlauf von echtem Fehler (B10.89).
+* `L_eff_bins.ps1` — effektiver Radstand je Log, zwei Wahrheiten, mit Signalschwelle (B10.86).
+* `snap_compare.ps1` — Vorher/Nachher zweier Sim-Laeufe (Spruenge, `out_snap`, Klemmen) (B10.88).
+
+**Sim-A/B-Schalter** (Umgebungsvariablen, `tools/sim/main.cpp`): `SIM_HR_OUT` (Szenario-Fahrt
+loggen), `SIM_OUT_RESID_FACTOR`, `SIM_OUT_MA_MS`, `SIM_VEH_TYPE`, `SIM_ANT_PIVOT`,
+`SIM_ART_K`, `SIM_ART_BOUND`, `SIM_ART_APPLY`.
+
+
 ## 7. Feldprobe B10.47 / B10.48 (2026-10-18)
 
 **Zwei Fragen, zwei Antworten:**
