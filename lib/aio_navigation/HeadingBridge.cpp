@@ -2990,6 +2990,19 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         }
     }
     if ((speedMps <= 0.5f) || !d.hasDualHeading) { s_artEstValid = false; }
+    // 2026-11-06e: ANGEWANDTER Knickwinkel gamma/2 - ratenbegrenzt. Das ist der Wert, der ins
+    // Heading (Mittelachse fuer AOG) und nach PGN 253 geht. Begruendung und Messung siehe
+    // Config::artEstApplyRateDegS: der rohe Schaetzwert springt zwischen 0,53 und +-33 Grad
+    // (Gueltigkeitswechsel + empfindlicher Hebel), und jeder Sprung landet 1:1 in der Ausgabe.
+    {
+        const float target = artEstValid ? (0.5f * artEstDeg)
+                                         : hbArticulationHalfDeg(lastWheelAngleDeg);
+        float dHalf = wrap180(target - s_artHalfDeg);
+        const float maxHalf = config.artEstApplyRateDegS * ((dtS > 0.0f) ? dtS : 0.01f);
+        if (dHalf >  maxHalf) { dHalf =  maxHalf; }
+        if (dHalf < -maxHalf) { dHalf = -maxHalf; }
+        s_artHalfDeg = wrap180(s_artHalfDeg + dHalf);
+    }
 
     // 1a+1e (2026-10-10): Traeger-Kette statt psi. Lage (plausibel) -> FAHRTRICHTUNG aus den
     // POSITIONEN (status.travelWitnessDeg/travelWitnessValid = 1a, positionabgeleitet und damit
@@ -3107,9 +3120,10 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // Eine selbstkonsistente 180-Grad-Spiegelung ist von einer echten Wende mit den
         // vorhandenen Signalen NICHT zu unterscheiden - also nicht raten.
         // B10.51: Beim Knicklenker messen die Antennen den VORDERRAHMEN; AOG erwartet die
-        // Mittelachse -> gamma/2 abziehen. gamma kommt aus dem GELENKWINKEL (echter Sensor
-        // direkt; beim virtuellen Keya-Weg der gelernte Encoder-Winkel des VWAS).
-        s_artHalfDeg = artEstValid ? (0.5f * artEstDeg) : hbArticulationHalfDeg(lastWheelAngleDeg);
+        // Mittelachse -> gamma/2 addieren. gamma kommt aus dem GELENKWINKEL (echter Sensor
+        // direkt; beim virtuellen Keya-Weg der gelernte Encoder-Winkel des VWAS) oder aus der
+        // Schaetzung. s_artHalfDeg wird OBEN einmal pro Frame ratenbegrenzt gefuehrt
+        // (2026-11-06e) - hier NICHT mehr direkt zuweisen, sonst ist die Begrenzung wirkungslos.
         // Vorzeichen (2026-11-06): AOG zeichnet das VORDERteil bei "heading - gamma/2"
         // (CVehicle.cs), die Mittelachse liegt also bei att + gamma/2. Mit einem Minus stand
         // die Ausgabe um gamma (bis 75 Grad) daneben - das war der Schraeglauf.

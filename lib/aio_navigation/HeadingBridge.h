@@ -617,6 +617,14 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     float    artEstMaxDeg = 78.0f;         // Plausibilitaetsband (Maschine: 75)
     float    artEstTauS = 0.60f;           // Tiefpass (dt-korrekt), fuer ruhige Darstellung
     float    artEstMaxRateDegS = 100.0f;   // physikalische Aenderungsrate des Knickgelenks
+    // 2026-11-06e: Ratenbegrenzung fuer den ANGEWANDTEN Knickwinkel (gamma/2 in der Ausgabe,
+    // gamma in PGN 253). Gemessen am Ref-Log knick_125_241: gamma/2 toggelt zwischen 0,53 und
+    // +-33 Grad - die Schaetzung ist bei 0,41 m Antennen-Vorlauf empfindlich, und beim Wechsel
+    // der Gueltigkeit (v <= 0,5 m/s) wird sie neu aufgesetzt. Ueber das Heading wurde daraus ein
+    // 20-Grad-Sprung der AUSGABE: 22 der 457 Kurvenframes "sprangen" um 14...20 Grad.
+    // Die Projektion von AOG (Vorderteil = heading - gamma/2) braucht keine Spruenge.
+    // Messung: "ruckelig" 11 % -> 7 %, stehende Frames 24 -> 17.
+    float    artEstApplyRateDegS = 40.0f;  // Grad/s fuer das angewandte gamma/2
     // --- 2026-10-18: Quellen-Bestaetigung (Heading) und Roll-Reinigung --------------
     // Betreiber: "1 s Uebergang zwischen den Quellen ist ok, aber zuerst sicher sein,
     // dass die neuen Daten stimmen - die ersten Werte nach Rueckkehr vom Empfang sind
