@@ -83,9 +83,19 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
             </a></li>
             <li><a href="/vwas">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
-                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2m0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8m1-13h-2v6l5.25 3.15.75-1.23-4-2.42Z"/>
+                    <!-- Traktor: Auspuff, Kabine, Motorhaube, grosses Hinterrad, kleines Vorderrad -->
+                    <rect x="6.8" y="3.4" width="1.5" height="2.4" rx="0.4"/>
+                    <rect x="7.2" y="5.4" width="4.6" height="5.2" rx="0.8"/>
+                    <rect x="6.4" y="10.4" width="8.2" height="4.0" rx="1"/>
+                    <rect x="14.2" y="10.4" width="6.0" height="3.4" rx="0.9"/>
+                    <rect x="16.6" y="13.6" width="1.3" height="2.4" rx="0.4"/>
+                    <circle cx="6.2" cy="17.6" r="3.3" fill="none" stroke="white" stroke-width="2"/>
+                    <circle cx="17.6" cy="18.2" r="2.2" fill="none" stroke="white" stroke-width="1.8"/>
                 </svg>
-                Vehicle settings<br><span style="font-size:12px;opacity:0.7">for virtual WAS and dual GPS</span>
+                <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.3">
+                    Vehicle settings
+                    <span style="margin-top:5px;font-size:13px;opacity:0.8">for virtual WAS and dual GPS</span>
+                </span>
             </a></li>
             <li><a href="/eventlogger">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
@@ -97,7 +107,10 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">
                     <path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2m-3 12H7v-2h10v2m0-4H7V8h10v2Z"/>
                 </svg>
-                Messages &amp; language<br><span style="font-size:12px;opacity:0.7">texts shown in AgOpenGPS</span>
+                <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.3">
+                    Messages &amp; language
+                    <span style="margin-top:5px;font-size:13px;opacity:0.8">texts shown in AgOpenGPS</span>
+                </span>
             </a></li>
             <li><a href="/logs">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="white" style="margin-right: 10px;">

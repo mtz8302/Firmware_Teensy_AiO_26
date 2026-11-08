@@ -3,16 +3,16 @@
 // Firmware_Teensy_AiO-New-Dawn is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 // You should have received a copy of the GNU General Public License along with Firmware_Teensy_AiO-New-Dawn. If not, see <https://www.gnu.org/licenses/>.
 
-// VWASConfigPage.h
+// TouchFriendlyVWASConfigPage.h
 // Virtual WAS configuration: vehicle geometry (manual entry or AgOpenGPS
 // vehicle.xml import), plus centre/endstop calibration buttons.
 
-#ifndef VWAS_CONFIG_PAGE_H
-#define VWAS_CONFIG_PAGE_H
+#ifndef TOUCH_FRIENDLY_VWAS_CONFIG_PAGE_H
+#define TOUCH_FRIENDLY_VWAS_CONFIG_PAGE_H
 
 #include <Arduino.h>
 
-const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
+const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -31,7 +31,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
   .field { display:flex; align-items:center; justify-content:space-between; margin:8px 0; }
   .field label { flex:1; padding-right:10px; }
   .field input, .field select { width:130px; padding:6px; font-size:16px; }
-  .hint { color:#4a5560; font-size:13px; margin:2px 0 10px 0; }
+  .hint { color:#4a5560; font-size:14px; margin:2px 0 10px 0; }
   .btn { padding:12px 18px; font-size:16px; border-radius:8px; border:none; margin:6px 6px 6px 0; cursor:pointer; }
   .btn-primary { background:#2e7d32; color:#fff; }
   .btn-danger { background:#c62828; color:#fff; }
@@ -40,7 +40,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
   .warn { background:#fff3cd; color:#5c3d00; border:1px solid #a05200; border-radius:8px; padding:10px; margin:10px 0; }
   .nav-buttons { display:grid; grid-template-columns:1fr 1fr; gap:15px; margin:0 0 14px 0; }
   @media (max-width:600px) { .nav-buttons { grid-template-columns:1fr; } }
-  .meas { font-family:monospace; font-size:13px; background:#eef4ff; border-radius:6px; padding:4px 8px; display:block; margin:-4px 0 10px 0; }
+  .meas { font-family:monospace; font-size:14px; background:#eef4ff; border-radius:6px; padding:4px 8px; display:block; margin:-4px 0 10px 0; }
   .xmlval { display:none; font-family:monospace; font-size:13px; background:#eef4ff; border:1px dashed #7aa7d9; border-radius:6px; padding:4px 8px; margin:-4px 0 10px 0; cursor:pointer; }
   .xmlval.diff { background:#fff3cd; border-color:#a05200; }
 </style>
@@ -57,7 +57,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 
   <div class="section">
     <h3>Import from AgOpenGPS</h3>
-    <div class="hint">Pick <code>vehicle.xml</code> (<code>Documents\AgOpenGPS\Vehicles\...</code>).
+    <div class="hint">Pick <code>vehicle.xml</code> (<code>Documents\AgOpenGPS\VehicleProfiles\...</code>).
       Nothing is written automatically: each value is <i>offered</i> under its field
       (<i>from XML: ...</i>, highlighted when it differs) and only reaches the board with <b>Save</b>.</div>
     <input type="file" id="vehicleXmlFile" accept=".xml">
@@ -131,8 +131,8 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
       your machine (or take it from AgOpenGPS's vehicle setup) and enter the same value there.
       <b>0 = test off</b> (reference is learned - escape hatch only).</div>
     <div class="hint"><b>Dual heading offset:</b> angle between antenna baseline and vehicle axis,
-      AOG's sign, <b>-100...+100</b>. Measure it on your machine: any error here offsets
-      <b>every</b> frame by that amount. Enter the same value in AgOpenGPS.</div>
+      AOG's sign, <b>-100..-80...+80..+100</b>. Measure it on your machine: any error here offsets
+      <b>every</b> frame by that amount. Enter the same value in AgOpenGPS.<b> This value is very important for exact steering.</b></div>
     <button class="btn btn-primary" onclick="saveGeometry()">Save antenna geometry</button>
     <button class="btn btn-secondary" onclick="reloadAll()">Reload from device</button>
     <button class="btn btn-secondary" onclick="useMeasuredRef()">Use measured length as reference</button>
@@ -589,4 +589,4 @@ setInterval(pollStatus, 1000);
 </html>
 )rawliteral";
 
-#endif // VWAS_CONFIG_PAGE_H
+#endif // TOUCH_FRIENDLY_VWAS_CONFIG_PAGE_H

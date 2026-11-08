@@ -37,7 +37,7 @@
 #include "web_pages/CANInfoJSON.h"  // CAN info JSON data
 #include "web_pages/CANConfigUploadPage.h"  // CAN config upload page
 #include "web_pages/TouchFriendlyDNSAliasPage.h"  // DNS alias configuration page
-#include "web_pages/VWASConfigPage.h"  // Virtual WAS configuration page
+#include "web_pages/TouchFriendlyVWASConfigPage.h"  // Touch-friendly virtual WAS configuration page
 #include "web_pages/HwMsgPage.h"       // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
 #include "HeadingMonitor.h"            // HPR heading-health logging (test drive)
 #include "HeadingBridge.h"             // heading/roll fall-back diagnostics
@@ -870,8 +870,8 @@ void SimpleWebManager::sendCANConfigUploadPage(EthernetClient& client) {
 }
 
 void SimpleWebManager::sendVWASConfigPage(EthernetClient& client) {
-    extern const char VWAS_CONFIG_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", VWAS_CONFIG_PAGE);
+    extern const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_VWAS_CONFIG_PAGE);
 }
 
 // ---------------------------------------------------------------------------
