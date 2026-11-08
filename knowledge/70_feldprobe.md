@@ -320,3 +320,44 @@ Schaetzung → −91° ging raus. AOG rechnet nichts weg (`aog_wasoff` = 0 in al
    Gegenprobe zu 11.4.
 5. `pc_ok` soll ≥ 50 % bleiben (Log 1 hatte 62,6 %).
 
+
+### 11.6 Sim-A/B: was die richtige Konfiguration bringt (2026-11-08)
+
+Derselbe Feld-Log, dreimal durch den Sim — gleicher Code, nur die Konfiguration geändert
+(`SIM_VEH_TYPE`, `SIM_WHEELBASE`, `SIM_MAX_STEER`, `SIM_BASE_REF_M`, `SIM_ANT_PIVOT`):
+
+| Lauf | Konfiguration | `veh_type` | `rl_clip` | `pc_ok` | `pc_dev` p50 | `rej=8` | `baseLen` | 253 mit Knick |
+|---|---|---|---|---|---|---|---|---|
+A | Feld (Typ 0, 2,14 m, 45°, Basis 0,710) | 0 | **83,1 %** | 61,9 % | 0,0° | 195 | **300** | **0 / 125** |
+C | nur Basislinie **0,85** | 0 | **41,9 %** | 62,1 % | 0,0° | 185 | 74 | 0 / 125 |
+B | alles richtig (Typ 2, 0,92 m, 75°, 0,41, Basis 0,85) | 2 | 76,2 % | **4,5 %** | **37,2°** | **914** | 74 | 102 / 125 |
+**B+fix** | dito, nach dem Sehnen-Fix (`91eef17`) | 2 | **20,1 %** | **62,1 %** | 0,0° | 185 | 74 | **102 / 125** |
+
+* **Lauf A ist die Kontrolle**: er reproduziert das Feld (siehe B10.96) → der Replay ist gültig.
+* **Nur die Basislinie (C)** halbiert `rl_clip` schon ohne jede Codeänderung.
+* **Ohne den Sehnen-Fix (B)** bricht `pc_ok` auf 4,5 % — der Fehler wäre bei der nächsten Fahrt
+  aufgetreten, sobald die Geometrie eingetragen ist.
+* **Mit Fix (B+fix)**: `rl_clip` **20,1 %**, `pc_ok` **62,1 %**, Knick in AOG → **alle fünf
+  Kriterien aus §10.3 gleichzeitig erfüllt**.
+
+**Der Lenkwinkel in AOG kommt genau dann an, wenn `vehicleType = 2` gesetzt ist.** Im Sim sendet
+die 253 `0`, wenn es keine Schätzung gibt (`hasArticulationEstimate()` false) — das ist derselbe
+Zustand, den die Firmware seit `a3d614c` sendet. Im Feld war es vorher der rohe Analogeingang
+(−91° = das „−90" in AOG).
+
+**γ̂ ist physikalisch richtig** (erstmals gegen eine unabhängige Wahrheit geprüft): Schätzer
+(2·`art_half`) gegen **Bahnkrümmung** `γ = 2·asin(κ·L/2)` mit L = 0,92 m, **dieselben 900 Frames**:
+
+| | p50 | p90 |
+|---|---|---|
+\|γ̂\| | 2,2° | 37,7° |
+\|γ_geo\| | 1,4° | 36,7° |
+Differenz | **+1,0°** (\|p50\| 2,4°) | 20,1° |
+
+Korrelation **r = 0,69**; der angewandte Knick erreicht 65,6° bei 75° Anschlag.
+
+**Werkzeug-Fehler, dabei gefunden**: `HR_HDR.current.txt` nannte Spalte 125 `ant_half`, die
+Firmware schreibt `art_half`. Da der Sim keine eigene Kopfzeile schreibt, wurde **jeder Sim-Log**
+mit dem falschen Namen gelesen (`art_half` = NULL). Korrigiert — wer `ant_half` benutzt, liest
+sonst den Knickwinkel für „halber Radstand".
+

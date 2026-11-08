@@ -151,13 +151,23 @@ die Schwellen nachziehen.
   `a3d614c`): PGN 253 sendet bei Qualitaet 0 **0** statt des rohen Analogen (das war AOGs
   -90 Grad), Knick-Schaetzer auch ohne RTK (`fixQuality >= 1`, weil er Kurs + Lage benutzt),
   und der Hinweis "Antenna ahead of pivot" auf **-10...+300 cm** korrigiert.
+* **SIM-A/B der Feld-Konfiguration** (B10.96, `70_feldprobe.md` §11.6): der Replay reproduziert
+  das Feld (rej-Verteilung identisch, rl_clip 83,1 gegen 83,0 %). Dabei gefunden und behoben:
+  (a) **Sehnen-Gate nahm den Gelenkwinkel ohne Qualitaetspruefung** - mit Typ 2 und ohne
+  Geber wurde der offene ADC (-91 Grad) halbiert und als -45,5 Grad abgezogen, `pc_ok`
+  brach von 62 auf 4,5 % (Commit `91eef17`); (b) **HR_HDR.current.txt nannte Spalte 125
+  `ant_half`** statt `art_half` - jeder Sim-Log wurde falsch benannt gelesen.
+  **gamma-Hut ist erstmals gegen die Bahnkruemmung geprueft**: r = 0,69, Median-Fehler 2,4 Grad.
+
 **Offen, priorisiert:**
 
 1. **NAECHSTE FAHRT: die Geometrie muss ins GEPLAETTE EEPROM** (Feldtest 11-08, B10.95):
    `veh_type` war **0** in allen 1251 Frames, `art_half` 0, `L` = 2,50 m, Basislinie 0,710.
    Erst Basislinie **0,85** (gemessen) oder 0 = lernen, dann `/vwas`: **0,92 / Typ 2 / 75 /
    0,41** (halber Radstand folgt). Danach im Boot-Log `wheelbase=0.92 type=2 maxAngle=75`
-   gegenpruefen und messen: `rl_clip` 83 -> ~25 %, `rej=baseLen` 300 -> 0, und in AOG
+   gegenpruefen und messen. **Im Sim belegt (B10.96, Lauf B+fix)**: `rl_clip` 83,1 -> **20,1 %**,
+   `pc_ok` **62,1 %**, `rej=baseLen` 300 -> 74, Knick in AOG (102 von 125 Sendungen,
+   -47,6...+76,9 Grad). In AOG
    **kein -90 Grad** mehr (bzw. der berechnete Knick statt 0).2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
    und `=7` (keine Sehnenprobe) sind laut **B10.53 gemessen** und duerfen NICHT einfach
    aufgeweitet werden (Verfuegbarkeit 74 %, skew p90 4,3 -> 19,1). Wer das verbessern will,
