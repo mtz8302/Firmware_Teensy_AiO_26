@@ -3027,8 +3027,9 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
             const float g = 2.0f * atanf((halfL * tanf(beta * 0.0174532925f)) / dM) * 57.2957795f;
             if (fabsf(g) <= config.artEstMaxDeg) {
                 // B10.97: gleitender Mittelwert ueber die letzten config.artEstAvgN Rohwerte,
-                // BEVOR der Tiefpass ihn sieht. Nach einem Ausfall (s_artEstValid false) wird
-                // der Puffer geleert - sonst zieht ein Wert von vor 30 s den Neustart.
+                // BEVOR der Tiefpass ihn sieht. Der Puffer bleibt ueber kurze Ausfaelle hinweg
+                // STEHEN (B10.97): sonst startet jede Wiedereinschaltung mit dem nackten
+                // Rauschwert - genau das erzeugte im Feld-Log 11-08 bis 67 Grad Knick im Stand.
                 float gUse = g;
                 uint8_t nAvgReq = (config.artEstAvgN > 1u) ? config.artEstAvgN : 1u;
                 // B10.98 (2026-11-08, Betreiber-Regel): "das dual heading hat selbst ein hohes
