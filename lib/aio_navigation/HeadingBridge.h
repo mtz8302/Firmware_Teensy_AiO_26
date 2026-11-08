@@ -625,6 +625,8 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     // 30 = 0,3 s. Nach dem Einschalten/Nachfuehren wird der Puffer geleert, damit kein alter
     // Wert nachwirkt; der Mittelwert startet dann mit den vorhandenen Werten (nUse < N).
     // 0 oder 1 = aus (dann wirkt nur der Tiefpass, wie vor 11-08).
+    // Der Wert ist ein MINDESTWERT: B10.98 hebt das Fenster auf Config::outMaMs an (der
+    // Ausgabefilter des Dual-Headings), damit der Knick nie schneller glaettet als der Kurs.
     uint8_t  artEstAvgN = 30;
     // B10.97 (2026-11-08): eine Schaetzung, die nur wenige Abtastschritte lang existiert, ist
     // KEINE Schaetzung. Im Feld-Log 11-08 (Log 2, Maschine steht) rollte sie kurz ueber 0,5 m/s,

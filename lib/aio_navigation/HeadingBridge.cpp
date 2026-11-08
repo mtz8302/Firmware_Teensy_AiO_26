@@ -3030,7 +3030,22 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                 // BEVOR der Tiefpass ihn sieht. Nach einem Ausfall (s_artEstValid false) wird
                 // der Puffer geleert - sonst zieht ein Wert von vor 30 s den Neustart.
                 float gUse = g;
-                const uint8_t nAvgReq = (config.artEstAvgN > 1u) ? config.artEstAvgN : 1u;
+                uint8_t nAvgReq = (config.artEstAvgN > 1u) ? config.artEstAvgN : 1u;
+                // B10.98 (2026-11-08, Betreiber-Regel): "das dual heading hat selbst ein hohes
+                // Rauschen, deshalb ist in der Ausgabe ein Filter drin - der Lenkwinkelfilter
+                // sollte gleich oder traeger sein als dieser, wenn die Eingangsdaten direkt aus
+                // der GPS-Quelle kommen". Genau das ist hier der Fall: gamma wird aus dem ROHEN
+                // Dual-Heading gerechnet (Kurs - Lage, Rauschen mit Faktor ~2,2 verstaerkt),
+                // waehrend die Ausgabe dasselbe Signal mit Config::outMaMs (300 ms) glaettet.
+                // Damit die gezeichnete Maschine nie mehr zittert als der Kurs, wird das Fenster
+                // auf mindestens outMaMs angehoben - die Regel steht damit im Code und nicht nur
+                // in einem Kommentar. Messung 11-08 (geradeaus, LIVE, v >= 0,5 m/s, Sprung pro
+                // 100 ms): Rohwert Dual-Heading p90 1,79 / Ausgabe 2,60 / Knick 0,44 Grad.
+                {
+                    const uint8_t nOutMa = (config.outMaMs > 0u)
+                                               ? (uint8_t)((config.outMaMs + 9u) / 10u) : 0u;
+                    if (nAvgReq < nOutMa) nAvgReq = nOutMa;
+                }
                 const uint8_t nAvg    = (nAvgReq > 32u) ? 32u : nAvgReq;   // Puffer ist 32
                 {
                     s_artAvgBuf[s_artAvgIdx] = g;
@@ -3050,7 +3065,12 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
                 if (!s_artEstValid) {
                     s_artEstDeg = gUse;
                 } else {
-                    const float a = (dtS > 0.0f) ? (dtS / (config.artEstTauS + dtS)) : 0.2f;
+                    // B10.98: auch der Tiefpass darf nicht schneller sein als der Ausgabefilter
+                    // (Config::outSmoothMs) - gleiche Begruendung wie beim Mittelwert-Fenster.
+                    float tauS = config.artEstTauS;
+                    const float tauOutS = (float)config.outSmoothMs * 0.001f;
+                    if (tauS < tauOutS) tauS = tauOutS;
+                    const float a = (dtS > 0.0f) ? (dtS / (tauS + dtS)) : 0.2f;
                     const float maxStep = config.artEstMaxRateDegS * ((dtS > 0.0f) ? dtS : 0.1f);
                     const float delta = (gUse - s_artEstDeg) * a;
                     const float lim   = (delta > maxStep) ? maxStep : ((delta < -maxStep) ? -maxStep : delta);
