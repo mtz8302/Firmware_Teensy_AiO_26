@@ -24,6 +24,7 @@ Die frueheren Abschnitte 0/3/4/5/6 stehen weiter hier im Ueberblick.
 | **Naechste Fahrt**: was fahren, welche Spalten auswerten, Zahl->Entscheidung | `70_feldprobe.md` | - |
 | Ziele, Messlatte (was "gut" heisst) | `01_ziele.md` | - |
 | Meldungen im Fuehrerhaus (PGN 221), Sprachen, Schalter, Meldungs-EEPROM | `90_aog_messages.md` | B10.80 |
+| **Web-UI ueber LAN, ESP32-Bridge, Seiten der Module (`sc.aog`, Modul-Proxy, DNS/mDNS)** | `95_webui_und_bridge.md` | B11.1...B11.11 |
 | Werkzeuge finden | `tools/analysis/README.md`, `tools/heading_bridge/README.md`, `tools/sim/README.md` | - |
 
 ## 0. STAND (diesen Block bei jeder Sitzung zuerst lesen und aktualisieren)
@@ -357,6 +358,7 @@ welche Datei was beantwortet. Ziele und Zahlen: `01_ziele.md`. Plan und offene P
 |---|---|
 | `01_ziele.md` | Ziele, Akzeptanzkriterien, Messlatte je Pfad (H/P/R/VWAS) |
 | `90_aog_messages.md` | PGN 221 (Hardware-Messages): Format, Katalog, Flankentriggerung, Sprachen (EN/DE im Flash, LOCAL im EEPROM), EEPROM-Block 2000, Seite `/hwmsg` |
+| `95_webui_und_bridge.md` | Web-UI der AiO ueber LAN, ESP32-Bridge per UART, Settings-Seiten der Module (IP-Weg, Alias `sc.aog`), DNS/mDNS, Virtual Host, Modul-Proxy, gemeinsame Seite fuer WiFi + Ethernet-Bibliothek (Nachtrag 11-07) |
 | `archive/GRUNDZIELE_2026-10-11.md` | Original der Ziele-/Regel-/Plan-Sammlung (Archiv, ersetzt durch 01_ziele / 80_plan / WORKFLOW §8) |
 | `heading_bridge_concept.md` (10-01) | Gesamtkonzept, Fusion, Gates, Modellgleichung, Historie |
 | `heading_bridge_report_2026-10-02.md` | Messbericht Kurve/Brücke, Rauschzahlen, kritische Sektion |
