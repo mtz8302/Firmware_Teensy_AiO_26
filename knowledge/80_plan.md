@@ -136,8 +136,9 @@ die Schwellen nachziehen.
    braucht einen anderen Ansatz als B(v) - z. B. eine zweite, unabhaengige Probe.
 3. **IMU-Rate in BRIDGE/COAST** (B10.83): im IMU-Log 0 % trotz `imu_q = 10` und 4...6 m/s.
    Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
-4. **Analog-Geber-Erkennung, naechste Stufe**: zusaetzlich pruefen, ob der BERECHNETE Winkel
-   sich aendert, waehrend der analoge steht (Betreiber-Vorgabe, noch nicht gebaut).
+4. **ERLEDIGT 2026-11-07: Analog-Geber-Erkennung, Stufe 2** (B10.93): zusaetzlich prueft jetzt
+   der BERECHNETE Knick (gamma aus Kurs + Lage, nicht vom Geber abhaengig), ob sich der Knick
+   aendert, waehrend der analoge steht (netto > 10 Grad im 10-s-Fenster, Geber < 1 Grad).
 5. **WIDERLEGT 2026-11-07: „Ursache 2 — der Pfad-Begrenzer frisst echte Kurven"**.
    Im Feld-Replay ist `rl_path` in **0 von 3638** Frames aktiv (> 0,5 Grad/s). Die 18,6 %
    nicht publizierter Kurvendrehung sind 221 Grad in 9 INIT-Frames plus 382 Grad ueber
