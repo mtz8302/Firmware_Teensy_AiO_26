@@ -2995,12 +2995,18 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     //     tan(att - cog) = d * tan(gamma/2) / (L/2)
     // umgestellt:  gamma = 2 * atan( (L/2) * tan(beta) / d )  mit beta = cog - (att + Offset)
     // Beide Groessen sind direkte Messungen (VTG-Kurs + Dual-Lage), es wird NICHT differenziert.
+    // 2026-11-08: das fixQuality-Gate stand auf >= 2 und sperrte den Schaetzer im Feld-Log 11-08
+    // in 67 % der Frames (fixQ = 1 bei 22 Sats, HDOP 0,70). Das Gate ist hier SACHLFREMD: der
+    // Schaetzer benutzt den VTG-Kurs (Doppler, positionsunabhaengig) und die Dual-Lage, die
+    // POSITION geht nicht ein. Gegengeprueft: die Positionsschritte waren ohne RTK sauber
+    // (p50 0,12 / p90 0,17 m bei 1,18 m/s, max 1,43 m, keine Haeufung von Spruengen).
+    // Deshalb jetzt >= 1 - "es gibt einen Fix", mehr verlangt diese Rechnung nicht.
     // Damit bekommt die Kette ihren fehlenden Eingang, ohne dass ein Lenkwinkel-Sensor noetig
     // ist. Vorzeichen: gamma > 0 = nach RECHTS geknickt (so erwartet es AOG).
     float artEstDeg   = 0.0f;
     bool  artEstValid = false;
     if (config.artEstFromCourse && hbIsArticulated() && d.hasDualHeading &&
-        (speedMps > 0.5f) && (d.fixQuality >= 2)) {
+        (speedMps > 0.5f) && (d.fixQuality >= 1)) {
         const float beta  = wrap180(d.headingTrue - (d.dualHeading + config.dualHeadingOffsetDeg));
         const float halfL = 0.5f * hbWheelbaseM(2.5f);
         const float dM    = config.artEstAntennaLeadM;

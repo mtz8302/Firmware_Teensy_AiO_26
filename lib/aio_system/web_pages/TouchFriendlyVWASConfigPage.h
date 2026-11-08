@@ -98,9 +98,11 @@ const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     </div>
     <div class="hint"><b>Articulated:</b> enter the FULL joint angle - AOG halves it itself.
       Too small drops every tight turn.</div>
-    <div class="hint"><b>Antenna ahead of pivot:</b> positive forward. Pivot is the <b>rear axle</b>
-      (tractor) or the <b>joint</b> (articulated). Use the value AOG's <b>main screen</b> draws
-      correctly - its configuration drawing is misleading for articulated. 0 = no lead.</div>
+    <div class="hint"><b>Antenna ahead of pivot:</b> positive = forward, negative = behind the pivot.
+      Pivot is the <b>rear axle</b> (tractor) or the <b>joint</b> (articulated). Usual range
+      <b>-10...+300 cm</b> (a mower antenna sits ~40...50 cm ahead; a roof antenna can be more).
+      Use the value AOG's <b>main screen</b> draws correctly - its configuration drawing is
+      misleading for articulated. 0 = no lead.</div>
     <div class="hint"><b>Side hill gain:</b> magnitude only, as AOG's slider (0.12...0.15).
       The firmware derives the sign itself.</div>
     <button class="btn btn-primary" onclick="saveConfig()">Save vehicle geometry</button>
@@ -175,9 +177,13 @@ function plausibilityWarnings(keys) {
   if (has('antennaPivotM')) {
     const ap = numOrNaN('antennaPivotM');
     if (isFinite(ap) && ap !== 0) {
-      if (ap < 10) { w.push('Antenna ahead of pivot ' + ap + ' cm - that looks like METRES typed by mistake.'); }
-      else if (ap < 100) { w.push('Antenna ahead of pivot ' + ap + ' cm is short (typical > 100 cm).'); }
-      else if (ap > 300) { w.push('Antenna ahead of pivot ' + ap + ' cm is far ahead (typical < 300 cm).'); }
+      // 2026-11-08 (Betreiber): -10...+300 cm ist alles sinnvoll, mehr kann es auch geben.
+      // Nur zwei echte Tippfehler werden gemeldet: Meter statt Zentimeter und ein Wert weit
+      // hinter dem Gelenk. "Kurz" ist KEIN Fehler - bei einem Knicklenker sitzt die Antenne
+      // bauartbedingt oft nur 40...50 cm vor dem Gelenk.
+      if (Math.abs(ap) < 2) { w.push('Antenna ahead of pivot ' + ap + ' cm - that looks like METRES typed by mistake (the field is cm).'); }
+      else if (ap < -10) { w.push('Antenna ahead of pivot ' + ap + ' cm is behind the pivot - the usual range is -10...+300 cm.'); }
+      else if (ap > 300) { w.push('Antenna ahead of pivot ' + ap + ' cm is far ahead - unusual, but allowed (the usual range is -10...+300 cm).'); }
     }
   }
   if (has('baselineMeters')) {

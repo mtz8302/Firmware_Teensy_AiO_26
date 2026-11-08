@@ -1965,8 +1965,18 @@ void AutosteerProcessor::sendPGN253() {
     // rohe Schaetzung. Zwei Gruende: (a) AOG soll denselben Knick zeichnen, den die
     // Heading-Korrektur rechnet; (b) faellt die Schaetzung kurz aus, ist der gehaltene Wert
     // richtig - und NICHT der analoge Lenkwinkel, der auf diesem Fahrzeug gar nicht existiert.
-    if ((steerAngleOutQuality <= 0.0f) && headingBridge.hasAppliedArticulation()) {
-        angleForAog = headingBridge.getAppliedArticulationDeg();
+    if (steerAngleOutQuality <= 0.0f) {
+        if (headingBridge.hasAppliedArticulation()) {
+            angleForAog = headingBridge.getAppliedArticulationDeg();
+        } else {
+            // 2026-11-08 (Feldbefund Log 11-08): Qualitaet 0 heisst "wir haben KEINEN Winkel".
+            // Vorher ging dann der ROHE Analogwert raus - auf einem Maeher ohne Geber der
+            // offene ADC-Eingang mit -91 Grad. AgOpenGPS zeigte dauerhaft -90 Grad, zeichnete
+            // die Maschine voll geknickt und seine Fahrtrichtungserkennung lief gegen ein
+            // Modell, das nie geradeaus stand (Betreiber: "Fahrtrichtung nicht immer richtig").
+            // Ohne Schaetzung ist 0 die ehrliche Antwort: "Knick unbekannt", nicht "-91".
+            angleForAog = 0.0f;
+        }
     }
     int16_t actualSteerAngle = (int16_t)(angleForAog * 100.0f);  // Actual angle * 100
     int16_t heading = 0;            // Deprecated - sent by GNSS
