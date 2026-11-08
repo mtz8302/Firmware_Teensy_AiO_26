@@ -193,3 +193,57 @@ dortigen offenen Punkte gepflegt.
   `AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md` — bewusst nicht hier, weil es zum
   SC-Projekt gehoert.
 
+## 9. Speicher-Rückmeldung: eine Konvention für alle Seiten (B10.99, 2026-11-08)
+
+Betreiber-Befund: *„das verhalten der webseite hardware msg und vwas beim speichern ist nicht
+gleich, wie die vorlage device sttings: dort kommt oben zunächst unter den knöpfen nichts und
+erst nach dem speichern wird der status in einem weiteren knopf, eher eine zeile, die aussieht
+wie ein knopf angezeigt: zuerst als fortschrittsbalken und dann grün, wenn gespeichert wurde."*
+
+**Die Vorlage ist `TouchFriendlyDeviceSettingsPage.h`** und macht genau drei Dinge — mehr nicht:
+
+1. `<div id="status"></div>` steht direkt unter `.nav-buttons` und ist beim Laden **leer**
+   (kein Klassenname, also kein Kasten, keine Höhe).
+2. Beim Speichern wird daraus `<div class="status">Saving settings…</div>` — der neutrale
+   graue Kasten aus `touch.css`, breit wie die Seite, sieht aus wie eine weitere Knopfzeile.
+3. Bei Erfolg `<div class="status success">Settings saved successfully!</div>` (grün), nach
+   **5 s** wird die Zeile wieder geleert.
+
+Die Farben stehen **ausschließlich** in `touch.css` (`.status`, `.status.success`,
+`.status.error`); eine Seite setzt **keine** eigene Statusfarbe, sonst sehen die Seiten
+unterschiedlich aus (genau das war der Befund vom 2026-11-06 auf der HwMsg-Seite).
+
+| Seite | vorher | jetzt |
+|---|---|---|
+| `TouchFriendlyDeviceSettingsPage.h` | Vorlage | unverändert |
+| `TouchFriendlyHwMsgPage.h` | dauerhaft grauer Kasten mit `loading...`; nach dem Speichern hat `setActiveTexts()` den grünen Text sofort mit „Language: …" überschrieben — die Bestätigung war **nie** zu sehen | `#status` leer; `setStatus()` setzt auch den Klassennamen zurück (leer = kein Kasten); `statusHold(5000)` blendet aus; Speichern heißt „Saving…"; die Sprach-Info steht in der Language-Karte (`#langInfo`), nicht mehr in der Statuszeile |
+| `TouchFriendlyVWASConfigPage.h` | zwei dauerhaft sichtbare `.hint`-Zeilen (`#saveResult`, `#geometryResult` mit „-"), ohne Farbe, ohne Ausblenden; der obere **Save**-Knopf rief `saveConfig()` **und** `saveGeometry()` nacheinander auf → bei leerem Antennenfeld stand „Enter a value first" neben einem erfolgreichen Speichern | **eine** Statuszeile unter den Knöpfen; `saveConfig()`, `saveGeometry()`, `useMeasuredRef()`, `reloadAll()` schreiben dorthin (grau → grün, 5 s); neues `saveAll()` für den oberen Knopf mit **einer** Rückmeldung und ohne Fehler bei leeren Antennenfeldern; `configBody()`/`geometryBody()` bauen den Rumpf, `postConfig()`/`postGeometry()` senden; `#geometryResult` bleibt als **Diagnose**-Block (Antennenlängen, Offset-Abweichung) stehen |
+
+**Checkliste für jede neue Seite** (dieselbe Mechanik, ~15 Zeilen JS):
+
+```js
+var statusTimer = null;
+function setStatus(text, kind) {            // kind: 'success' | 'error' | null (grau)
+  var el = document.getElementById('status'); if (!el) { return; }
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+  el.innerText = text || '';
+  el.className = text ? ('status' + (kind === 'success' ? ' success'
+                        : (kind === 'error' ? ' error' : ''))) : '';
+}
+function statusHold(ms) {                   // 5000 fuer "gespeichert", 2000 fuer "lade..."
+  if (statusTimer) { clearTimeout(statusTimer); }
+  statusTimer = setTimeout(function () { setStatus('', null); }, ms);
+}
+```
+
+Regeln, die daraus folgen: **beim Laden nichts anzeigen** (kein `loading…`, kein „-", keine
+leere Box), **jede Aktion quittieren** (grau = läuft, grün = gespeichert, rot = Fehler),
+**Erfolg nach 5 s ausblenden**, **Fehler stehen lassen**, und `loadX()` nach dem Speichern
+darf die grüne Zeile **nicht** überschreiben (deshalb `#langInfo` bzw. `statusHold` erst nach
+dem Refresh setzen).
+
+**Anzeigezeiten (2026-11-08):** der Betreiber hat in `lib/aio_system/aog_hwmsg.h` die
+Anzeigedauern auf **4 / 3 / 3 / 4 s** (weakFix / bridge / noCourse / posJump) und die
+DE-Texte auf das GNSS-Präfix geändert. Die Sekunden-Labels auf der HwMsg-Seite
+(`<span class="msg-sub">… · 5 s</span>`) zeigten noch 5 s und sind nachgezogen — Seite und
+Firmware sagen jetzt dasselbe. **Wer dort eine Dauer ändert, ändert beide Stellen.**
