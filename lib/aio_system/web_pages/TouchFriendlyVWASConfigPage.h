@@ -52,8 +52,13 @@ const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <button type="button" class="touch-button" style="background:#7f8c8d;"
             onclick="window.location.href='/'">Back</button>
     <button type="button" class="touch-button" style="background:#2e7d32;"
-            onclick="saveConfig();saveGeometry();">Save</button>
+            onclick="saveAll()">Save</button>
   </div>
+
+  <!-- Rueckmeldung beim Speichern: genau wie auf der Vorlage Device Settings.
+       Beim Laden LEER (kein Kasten unter den Knoepfen), beim Speichern grau, danach
+       gruen. Die Klassen .status/.status.success/.status.error stehen in touch.css. -->
+  <div id="status"></div>
 
   <div class="section">
     <h3>Import from AgOpenGPS</h3>
@@ -106,7 +111,6 @@ const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
     <div class="hint"><b>Side hill gain:</b> magnitude only, as AOG's slider (0.12...0.15).
       The firmware derives the sign itself.</div>
     <button class="btn btn-primary" onclick="saveConfig()">Save vehicle geometry</button>
-    <div id="saveResult" class="hint"></div>
   </div>
 
   <div class="section">
@@ -150,6 +154,27 @@ const char TOUCH_FRIENDLY_VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 </div>
 
 <script>
+// --- Rueckmeldung beim Speichern (Betreiber-Vorgabe 2026-11-08) -----------------
+// Vorlage ist TouchFriendlyDeviceSettingsPage.h: unter den Knoepfen steht beim Laden
+// NICHTS; erst beim Speichern erscheint eine Zeile, die wie ein Knopf aussieht - zuerst
+// neutral/grau (das "laeuft"), danach gruen ("gespeichert"), nach 5 s ist sie weg.
+// Die Klassen .status / .status.success / .status.error stehen in touch.css; hier wird
+// KEINE eigene Farbe gesetzt, sonst sehen die Seiten unterschiedlich aus.
+var statusTimer = null;
+function setStatus(text, kind) {
+  var el = document.getElementById('status');
+  if (!el) { return; }
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+  el.innerText = text || '';
+  el.className = text
+    ? ('status' + (kind === 'success' ? ' success' : (kind === 'error' ? ' error' : '')))
+    : '';
+}
+function statusHold(ms) {
+  if (statusTimer) { clearTimeout(statusTimer); }
+  statusTimer = setTimeout(function () { setStatus('', null); }, ms);
+}
+
 // --- Plausibilitaet (2026-11-06, Betreiber) ---------------------------------
 // Die Grenzen BLOCKIEREN nicht - sie fragen nach. Eine Maschine darf untypisch sein;
 // ein Tippfehler (0.92 statt 92, also Meter statt cm) soll aber auffallen.
@@ -237,12 +262,9 @@ function loadConfig() {
     document.getElementById('sideHillGain').value = cfg.sideHillGain;
     gainInfo(cfg);
   }).catch(e => {
-    // Visible on purpose. A silent failure here leaves every form field empty,
-    // which is indistinguishable from "the EEPROM contains wrong values" - the
-    // user sees a page of wrong-looking numbers and no indication that they were
-    // never loaded at all.
-    document.getElementById('saveResult').innerText =
-      'Could not load configuration: ' + e;
+    // Sichtbar scheitern: sonst stehen leere Felder da und es sieht aus, als waere das
+    // EEPROM leer statt "nie geladen".
+    setStatus('Could not load configuration: ' + e, 'error');
   });
 }
 
@@ -265,9 +287,10 @@ function gainInfo(cfg) {
   document.getElementById('gainInfo').innerText = t;
 }
 
-function saveConfig() {
-  if (!confirmPlausibility(['wheelbase', 'antennaPivotM', 'maxSteeringAngle', 'sideHillGain'])) { return; }
-  const body = {
+// Rumpf aus den Feldern - getrennt vom Senden, damit der obere "Save"-Knopf Fahrzeug-
+// UND Antennenwerte in EINER Rueckmeldung speichern kann.
+function configBody() {
+  return {
     // Felder in CM -> API in METERN.
     wheelbase: fromField('wheelbase', parseFloat(document.getElementById('wheelbase').value)),
     maxSteeringAngle: parseFloat(document.getElementById('maxSteeringAngle').value),
@@ -275,21 +298,32 @@ function saveConfig() {
     antennaPivotM: fromField('antennaPivotM', parseFloat(document.getElementById('antennaPivotM').value) || 0),
     sideHillGain: parseFloat(document.getElementById('sideHillGain').value)
   };
-  fetch('/api/vwas/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) })
-    .then(r => r.json())
+}
+
+function postConfig(body) {
+  return fetch('/api/vwas/config', { method: 'POST', headers: {'Content-Type':'application/json'},
+                                     body: JSON.stringify(body) })
+    .then(r => r.json());
+}
+
+function saveConfig() {
+  if (!confirmPlausibility(['wheelbase', 'antennaPivotM', 'maxSteeringAngle', 'sideHillGain'])) { return; }
+  setStatus('Saving...', null);
+  postConfig(configBody())
     .then(res => {
       if (res.status === 'saved') {
         let t = 'Saved.';
         if (typeof res.sideHillGainEffective === 'number') {
           t += '  effective internally ' + res.sideHillGainEffective.toFixed(3) + ' deg/deg';
         }
-        document.getElementById('saveResult').innerText = t;
+        setStatus(t, 'success');
+        statusHold(5000);
         loadConfig();   // refresh the derived/reported display in the same click
       } else {
-        document.getElementById('saveResult').innerText = 'Error: ' + res.message;
+        setStatus('Not saved: ' + (res.message || 'unknown'), 'error');
       }
     })
-    .catch(e => { document.getElementById('saveResult').innerText = 'Save failed: ' + e; });
+    .catch(e => { setStatus('Save failed: ' + e, 'error'); });
 }
 
 // --- XML-Import: erst ZEIGEN, dann uebernehmen (B10.73, 2026-11-01) -------------
@@ -509,45 +543,92 @@ function loadGeometry() {
   });
 }
 
-function saveGeometry() {
-  if (!confirmPlausibility(['baselineMeters', 'headingOffsetDeg'])) { return; }
+// Liefert { body: {...} } oder { err: '<Text>' }. Ein leeres body heisst "nichts
+// eingegeben" - das ist beim oberen "Save" KEIN Fehler (die Antennenfelder sind optional),
+// beim eigenen Knopf aber schon.
+function geometryBody() {
   const body = {};
   const rawM = document.getElementById('baselineMeters').value.trim();
   if (rawM !== '') {
     const cm = parseFloat(rawM);
-    if (!isFinite(cm)) {
-      document.getElementById('geometryResult').innerText = 'Antenna spacing: not a number';
-      return;
-    }
+    if (!isFinite(cm)) { return { err: 'Antenna spacing: not a number' }; }
     body.meters = fromField('baselineMeters', cm);   // Feld in CM -> API in METERN
   }
   const rawO = document.getElementById('headingOffsetDeg').value.trim();
   if (rawO !== '') {
     const o = parseFloat(rawO);
-    if (!isFinite(o)) {
-      document.getElementById('geometryResult').innerText = 'Offset: not a number';
-      return;
-    }
+    if (!isFinite(o)) { return { err: 'Offset: not a number' }; }
     body.offsetDeg = o;
   }
-  if (Object.keys(body).length === 0) {
-    document.getElementById('geometryResult').innerText =
-      'Enter a value first. Antenna spacing 0 = test off (reference is learned).';
+  return { body: body };
+}
+
+function postGeometry(body) {
+  return fetch('/api/bridge/geometry', { method: 'POST', headers: {'Content-Type':'application/json'},
+                                          body: JSON.stringify(body) })
+    .then(r => r.json());
+}
+
+function saveGeometry() {
+  if (!confirmPlausibility(['baselineMeters', 'headingOffsetDeg'])) { return; }
+  const g = geometryBody();
+  if (g.err) { setStatus(g.err, 'error'); return; }
+  if (Object.keys(g.body).length === 0) {
+    setStatus('Enter a value first. Antenna spacing 0 = test off (reference is learned).', 'error');
     return;
   }
-  fetch('/api/bridge/geometry', { method: 'POST', headers: {'Content-Type':'application/json'},
-                                  body: JSON.stringify(body) })
-    .then(r => r.json())
+  setStatus('Saving...', null);
+  postGeometry(g.body)
     .then(res => {
       if (res.status === 'saved') {
-        document.getElementById('geometryResult').innerText =
-          'Saved: antenna spacing ' + (res.meters * 100).toFixed(1) + ' cm, offset ' +
-          res.offsetDeg.toFixed(1) + ' deg.';
+        setStatus('Saved: antenna spacing ' + (res.meters * 100).toFixed(1) + ' cm, offset ' +
+                  res.offsetDeg.toFixed(1) + ' deg.', 'success');
+        statusHold(5000);
         loadGeometry();
       } else {
-        document.getElementById('geometryResult').innerText = 'Error: ' + res.message;
+        setStatus('Not saved: ' + (res.message || 'unknown'), 'error');
       }
-    });
+    })
+    .catch(e => { setStatus('Save failed: ' + e, 'error'); });
+}
+
+// Oberer "Save": Fahrzeug- UND Antennenwerte in einem Zug, EINE Rueckmeldung. Vorher rief
+// der Knopf saveConfig() und saveGeometry() nacheinander auf - beide schrieben in getrennte
+// Zeilen, und bei leerem Antennenfeld stand dort "Enter a value first" neben einem
+// erfolgreichen Speichern (Betreiber-Befund 2026-11-08).
+function saveAll() {
+  if (!confirmPlausibility(['wheelbase', 'antennaPivotM', 'maxSteeringAngle', 'sideHillGain',
+                            'baselineMeters', 'headingOffsetDeg'])) { return; }
+  const g = geometryBody();
+  if (g.err) { setStatus(g.err, 'error'); return; }
+  const withGeo = (Object.keys(g.body).length > 0);
+  setStatus('Saving...', null);
+  postConfig(configBody())
+    .then(res => {
+      if (res.status !== 'saved') {
+        setStatus('Not saved: ' + (res.message || 'unknown'), 'error');
+        return;
+      }
+      if (!withGeo) {
+        setStatus('Saved. (No antenna values entered - antenna geometry unchanged.)', 'success');
+        statusHold(5000);
+        loadConfig();
+        return;
+      }
+      return postGeometry(g.body).then(res2 => {
+        if (res2.status === 'saved') {
+          setStatus('Saved: vehicle geometry and antenna spacing ' + (res2.meters * 100).toFixed(1) +
+                    ' cm, offset ' + res2.offsetDeg.toFixed(1) + ' deg.', 'success');
+          statusHold(5000);
+          loadConfig();
+          loadGeometry();
+        } else {
+          setStatus('Vehicle geometry saved, antenna geometry NOT saved: ' +
+                    (res2.message || 'unknown'), 'error');
+        }
+      });
+    })
+    .catch(e => { setStatus('Save failed: ' + e, 'error'); });
 }
 
 // "Loesung als Referenz uebernehmen" (10-11): die vom Empfaenger GEMESSENE Laenge als feste
@@ -555,35 +636,34 @@ function saveGeometry() {
 // MELDET nur, sie aendert die Referenz nie von selbst (ein falsch uebernommener Wert waere
 // genau der Fehler, gegen den das Sicherheitsnetz existiert).
 function useMeasuredRef() {
-  fetch('/api/bridge/geometry', { method: 'POST', headers: {'Content-Type':'application/json'},
-                                  body: JSON.stringify({ useMeasured: true }) })
-    .then(r => r.json())
+  setStatus('Applying the measured length...', null);
+  postGeometry({ useMeasured: true })
     .then(res => {
       if (res.status === 'saved') {
-        document.getElementById('geometryResult').innerText =
-          'Applied: ' + (res.meters * 100).toFixed(1) + ' cm as the FIXED reference (measured from ' +
-          res.frames + ' clean frames). Now in the EEPROM.';
+        setStatus('Applied: ' + (res.meters * 100).toFixed(1) +
+                  ' cm as the FIXED reference (measured from ' + res.frames +
+                  ' clean frames). Now in the EEPROM.', 'success');
+        statusHold(5000);
         loadGeometry();
       } else {
-        document.getElementById('geometryResult').innerText = 'Not applied: ' + res.message;
+        setStatus('Not applied: ' + (res.message || 'unknown'), 'error');
       }
     })
-    .catch(e => { document.getElementById('geometryResult').innerText = 'Error: ' + e; });
+    .catch(e => { setStatus('Error: ' + e, 'error'); });
 }
 
 
 // 2026-11-06: "Reload from device" - ALLE Werte neu holen und sichtbar quittieren.
 // Vorher hiess der Knopf "Refresh display" und rief nur loadGeometry(): standen die Werte
 // schon im Formular, passierte sichtbar NICHTS - das sah aus wie "der Knopf geht nicht".
-// Jetzt: sofortige Rueckmeldung, dann Fahrzeugdaten UND Antennen-Geometrie neu laden.
+// Jetzt: sofortige Rueckmeldung in der Statuszeile, dann Fahrzeugdaten UND Antennen-
+// Geometrie neu laden.
 function reloadAll() {
-  const g = document.getElementById('geometryResult');
-  const s = document.getElementById('saveResult');
-  if (g) { g.innerText = 'reloading from device...'; }
-  if (s) { s.innerText = ''; }
+  setStatus('Reloading from device...', null);
   loadConfig();
   loadGeometry();
   if (typeof pollStatus === 'function') { pollStatus(); }
+  statusHold(2000);
 }
 
 loadGeometry();

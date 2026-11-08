@@ -151,14 +151,14 @@ const char TOUCH_FRIENDLY_HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             </button>
         </div>
 
-        <div id="status" class="status">loading...</div>
+        <div id="status"></div>
 
         <div class="card">
             <div class="toggle-container">
                 <div class="toggle-info">
                     <label class="toggle-label" for="enabled">Hardware messages on</label>
                     <div class="help-text">
-                        Show warnings and the clock in AgOpenGPS. Off = nothing is sent at all.
+                        Show warnings in AgOpenGPS therefore hardware messages must be enabled in AgOpenGPS too. Off = nothing is sent at all.
                     </div>
                 </div>
                 <label class="toggle-switch">
@@ -178,6 +178,7 @@ const char TOUCH_FRIENDLY_HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             <div class="help-text">
                 "Local" uses the texts below. The web interface itself stays in English.
             </div>
+            <div class="help-text" id="langInfo"></div>
         </div>
 
         <div class="card">
@@ -189,22 +190,22 @@ const char TOUCH_FRIENDLY_HW_MSG_PAGE[] PROGMEM = R"rawliteral(
             </div>
 
             <div class="msg-row">
-                <div class="msg-head">Weak GNSS fix <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
+                <div class="msg-head">Weak GNSS fix <span class="msg-sub">&middot; warning &middot; 4 s</span></div>
                 <input type="text" id="weakFix" maxlength="47" placeholder="Weak GNSS fix">
                 <div class="active-line">active now: <span id="act_weakFix">-</span></div>
             </div>
             <div class="msg-row">
-                <div class="msg-head">Poor GNSS heading quality <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
+                <div class="msg-head">Poor GNSS heading quality <span class="msg-sub">&middot; notice &middot; 3 s</span></div>
                 <input type="text" id="bridge" maxlength="47" placeholder="poor GNSS Heading quality">
                 <div class="active-line">active now: <span id="act_bridge">-</span></div>
             </div>
             <div class="msg-row">
-                <div class="msg-head">No course, heading holds <span class="msg-sub">&middot; notice &middot; 5 s</span></div>
+                <div class="msg-head">No course, heading holds <span class="msg-sub">&middot; notice &middot; 3 s</span></div>
                 <input type="text" id="noCourse" maxlength="47" placeholder="No course - hold">
                 <div class="active-line">active now: <span id="act_noCourse">-</span></div>
             </div>
             <div class="msg-row">
-                <div class="msg-head">Position jump <span class="msg-sub">&middot; warning &middot; 5 s</span></div>
+                <div class="msg-head">Position jump <span class="msg-sub">&middot; warning &middot; 4 s</span></div>
                 <input type="text" id="posJump" maxlength="47" placeholder="Position jump">
                 <div class="active-line">active now: <span id="act_posJump">-</span></div>
             </div>
@@ -230,10 +231,21 @@ const LANG_NAME = ['English', 'Deutsch', 'Local'];
 
 // kind: 'success' | 'error' | null - genau die Klassen aus touch.css (gleiche Optik wie
 // alle anderen Seiten: gruen/weiss bzw. rot/weiss; null = neutraler grauer Kasten).
+let STATUS_TIMER = null;
 function setStatus(text, kind) {
     const el = document.getElementById('status');
-    el.innerText = text;
-    el.className = 'status' + (kind === 'success' ? ' success' : (kind === 'error' ? ' error' : ''));
+    if (STATUS_TIMER) { clearTimeout(STATUS_TIMER); STATUS_TIMER = null; }
+    el.innerText = text || '';
+    el.className = text
+        ? ('status' + (kind === 'success' ? ' success' : (kind === 'error' ? ' error' : '')))
+        : '';
+}
+
+// Nach dem Speichern 5 s stehen lassen, dann ist die Zeile wieder weg - genau wie auf
+// der Vorlage Device Settings (Betreiber 2026-11-08).
+function statusHold(ms) {
+    if (STATUS_TIMER) { clearTimeout(STATUS_TIMER); }
+    STATUS_TIMER = setTimeout(function () { setStatus('', null); }, ms);
 }
 
 function setLangActive(lang) {
@@ -250,7 +262,8 @@ function setActiveTexts(active, lang) {
         if (el) { el.innerText = CURRENT_ACTIVE[k] || '-'; }
     });
     const name = LANG_NAME[Number(lang)];
-    if (name) { setStatus('Language: ' + name + ' - the texts above are what AgOpenGPS shows.', null); }
+    const li = document.getElementById('langInfo');
+    if (li && name) { li.innerText = 'Language: ' + name + ' - the texts above are what AgOpenGPS shows.'; }
 }
 
 // Die aktiven Texte in die Felder uebernehmen, damit man sie abwandeln kann
@@ -261,6 +274,7 @@ function copyActive() {
         if (el && CURRENT_ACTIVE[k]) { el.value = CURRENT_ACTIVE[k].substring(0, 47); }
     });
     setStatus('Copied the active texts into the fields - press "Apply Changes" to store them.', null);
+    statusHold(5000);
 }
 
 // Hauptschalter: wirkt sofort (nicht erst mit "Apply Changes"), weil er der
@@ -275,6 +289,7 @@ function saveEnabled() {
     }).then(function (r) { return r.json(); }).then(function (j) {
         if (j.status === 'ok') {
             setStatus(on ? 'Hardware messages are ON.' : 'Hardware messages are OFF.', 'success');
+            statusHold(5000);
         } else { setStatus('Error: ' + (j.message || 'unknown'), 'error'); }
     }).catch(function (e) {
         setStatus('Save failed: ' + e, 'error');
@@ -300,7 +315,7 @@ function load() {
 function save() {
     const body = {};
     KEYS.forEach(function (k) { body[k] = document.getElementById(k).value; });
-    setStatus('Applying...', null);
+    setStatus('Saving...', null);
     fetch('/api/hwmsg/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -310,6 +325,7 @@ function save() {
             // Nach dem Speichern die aktiven Texte neu holen: bei Sprache "Local" aendert
             // sich damit auch die Anzeige "active now".
             setStatus('Saved. The new texts are active now.', 'success');
+            statusHold(5000);
             load();
         } else { setStatus('Error: ' + (j.message || 'unknown'), 'error'); }
     }).catch(function (e) {

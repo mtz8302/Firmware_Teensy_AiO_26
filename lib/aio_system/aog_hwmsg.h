@@ -53,7 +53,7 @@ struct AogMsgDef {
     uint8_t     colour;    // 0 = Salmon (Warnung), sonst Bisque (Info)
     uint8_t     prio;      // hoeher = darf eine LAUFENDE Meldung verdraengen
     uint32_t    minGapMs;  // SICHERHEITSNETZ gegen Flattern - NICHT der Wiederholungstakt!
-                           // Seit 2026-11-06h sind die Meldungen FLANKENGETRIGGERT: gesendet
+                           // Die Meldungen sind FLANKENGETRIGGERT: gesendet
                            // wird einmal je Auftreten, erneut erst, wenn die Bedingung weg
                            // war (siehe AutosteerProcessor::hwEdge). Der Abstand greift nur,
                            // wenn eine Bedingung hektisch hin und her springt.
@@ -62,10 +62,10 @@ struct AogMsgDef {
 inline const AogMsgDef& aogMsgDef(AogMsgId id) {
     static const AogMsgDef k[(int)AogMsgId::Count] = {
         //  EN-Text                 DE-Text                  s  Farbe Prio  Abstand
-        { { "Weak GNSS fix",     "Empfang schwach"      }, 5, 0, 2, 15000u },  // Warnung
-        { { "poor GNSS Heading quality",   "Empfang Fahrtrichtung ungenau"        }, 5, 1, 1, 20000u },  // Hinweis
-        { { "No course - hold",  "Keine Fahrtrichtung bestimmbar: Kurs halten"   }, 5, 1, 1, 20000u },  // Hinweis
-        { { "Position jump",     "Positionssprung"      }, 5, 0, 3, 10000u },  // Warnung
+        { { "Weak GNSS fix",     "GNSS Empfang schwach"      }, 4, 0, 2, 15000u },  // Warnung
+        { { "poor GNSS Heading quality",   "GNSS Empfang Fahrtrichtung ungenau"        }, 3, 1, 1, 20000u },  // Hinweis
+        { { "No course - hold",  "Keine Fahrtrichtung bestimmbar: Kurs halten"   }, 3, 1, 1, 20000u },  // Hinweis
+        { { "Position jump",     "Positionssprung"      }, 4, 0, 3, 10000u },  // Warnung
     };
     return k[(int)id];
 }
