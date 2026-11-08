@@ -144,21 +144,33 @@ die Schwellen nachziehen.
 * **`kOutHardRateDegS = 200 °/s` rechnerisch abgesichert** (B10.94): klemmt erst oberhalb von
   **32 km/h bei 40 Grad** Vollausschlag — Punkt geschlossen.
 
+* **Feldtest 2026-11-08 ausgewertet** (B10.95, `70_feldprobe.md` §11): **2 von 5** Kriterien
+  erreicht - `pc_ok` **62,6 %** (Ziel >=20) und Kurvenverhaeltnis **0,89** (Ziel >0,8).
+  `veh_type` 0 und `rl_clip` 83 % scheitern an der NICHT eingetragenen Geometrie; dazu
+  `rej=baseLen` 24 % (Basislinie 0,710 gegen 0,824). Drei Korrekturen aus dem Test (Commit
+  `a3d614c`): PGN 253 sendet bei Qualitaet 0 **0** statt des rohen Analogen (das war AOGs
+  -90 Grad), Knick-Schaetzer auch ohne RTK (`fixQuality >= 1`, weil er Kurs + Lage benutzt),
+  und der Hinweis "Antenna ahead of pivot" auf **-10...+300 cm** korrigiert.
 **Offen, priorisiert:**
 
-1. **Feldprobe mit der neuen Firmware** (der eigentliche naechste Schritt): Werte auf der
-   Seite eintragen (92 / 75 / 41 / 84, Typ 2, Offset 88,3), dann messen, ob `rl_clip` wirklich
-   auf ~25 % faellt und `-91 Grad` in AOG durch den berechneten Knick ersetzt wird.
-2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
+1. **NAECHSTE FAHRT: die Geometrie muss ins GEPLAETTE EEPROM** (Feldtest 11-08, B10.95):
+   `veh_type` war **0** in allen 1251 Frames, `art_half` 0, `L` = 2,50 m, Basislinie 0,710.
+   Erst Basislinie **0,85** (gemessen) oder 0 = lernen, dann `/vwas`: **0,92 / Typ 2 / 75 /
+   0,41** (halber Radstand folgt). Danach im Boot-Log `wheelbase=0.92 type=2 maxAngle=75`
+   gegenpruefen und messen: `rl_clip` 83 -> ~25 %, `rej=baseLen` 300 -> 0, und in AOG
+   **kein -90 Grad** mehr (bzw. der berechnete Knick statt 0).2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
    und `=7` (keine Sehnenprobe) sind laut **B10.53 gemessen** und duerfen NICHT einfach
    aufgeweitet werden (Verfuegbarkeit 74 %, skew p90 4,3 -> 19,1). Wer das verbessern will,
    braucht einen anderen Ansatz als B(v) - z. B. eine zweite, unabhaengige Probe.
 3. **IMU-Rate in BRIDGE/COAST** (B10.83): im IMU-Log 0 % trotz `imu_q = 10` und 4...6 m/s.
    Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
-4. **Entscheidung offen**: `physicalBaselineDefaultM` von 0.711 m auf **0 (lernen)** setzen?
+4. **AOG-Fahrtrichtung beobachten** (Gegenprobe zu `a3d614c`): die vermutete Ursache war der
+   dauerhaft -90 Grad grosse Lenkwinkel. Nach der naechsten Fahrt pruefen, ob AOG die Richtung
+   jetzt stabil erkennt - und ob `veh_type`/`art_half` dann 2 bzw. != 0 sind.
+5. **Entscheidung offen**: `physicalBaselineDefaultM` von 0.711 m auf **0 (lernen)** setzen?
    Mit 0,711 als Build-Default drosselt jede Maschine, deren Antennenabstand davon abweicht
    (11-07: geloest 0,83 m = +17 %, Toleranz 5 %) - siehe B10.91/B10.92.
-5. **Entscheidung offen**: sollen die ~12 untracked Feld-Logs (ca. 10 MB, inkl. 11-07) ins
+6. **Entscheidung offen**: sollen die ~12 untracked Feld-Logs (ca. 10 MB, inkl. 11-07) ins
    Sim-Repo? Es versioniert bereits 224 Logs.
 
 **Geschlossen bzw. widerlegt am 2026-11-07** (Belege in `10_heading.md`): Modellskala-Widerspruch

@@ -171,6 +171,8 @@ Fahrten **und** alle Empfangszustaende ab, und sind EINE Sitzung (t laeuft 16,7 
 | 16-13 | 35,8 / - | 23,7 / - | 1 % | **22,5** |
 | 16-32 | **4,0** / - | **2,9** / - | 13 % | 0,3 |
 
+**Ergaenzt 2026-11-08** (Feldprobe Maeher, Auswertung in §11): `2026-11-08 Knicklenker 0 Hof 2 vr vermischt` - der erste Fahrlog mit **`pc_ok` 62,6 %** und **`|dAz|/|dAtt|` 0,89** (Ziel >0,8 erreicht). Der zweite Log desselben Tages (`... Hof vr vermischt`) ist bewusst NICHT im Satz: 412 INIT-Frames gegen 9 LIVE, `qf`=0 in 47 % - keine GNSS-Loesung, kein Fahrversuch.
+
 **Ziele bleiben: Rate p99 <= 1 Grad/s, Band p90 <= 2 Grad.** Kein Log erreicht sie;
 der beste (16-32) liegt bei 4,0 / 2,9.
 
@@ -254,3 +256,67 @@ Alles andere (Zaun, Trim, Latenz) ist heute nicht dran — nicht ueberladen.
   Deckel (Ratenklassen breit verteilt). `rl_path` war in **0 von 3638** Frames aktiv, d. h.
   die alte Vermutung „Pfad-Begrenzer frisst echte Kurven" ist **widerlegt**. Offen bleibt nur
   die normale Filter-Nachlaufzeit — kein Fehler, kein Handlungsbedarf.
+
+## 11. FELDPROBE 2026-11-08 — Auswertung (Knicklenker, ohne LWS und ohne Motor)
+
+Zwei Logs vom Maeher (Radstand 92 cm, Antennenabstand 85 cm, voller Knick ~75 Grad, Antennen
+~41 cm vor der Vorderachse):
+
+| Log | Dauer | Zustände | `qf` | `uni_hdgsd` | brauchbar? |
+|---|---|---|---|---|---|
+| `2026-11-08 Knicklenker 0 Hof 2 vr vermischt` | 2,1 min / 1251 | **LIVE 925**, COAST 319, INIT 7 | 4 in **91 %** | p50 **0,44°** | **ja — der Fahrlog** |
+| `2026-11-08 Knicklenker 0 Hof vr vermischt` | 1,5 min / 878 | INIT **412**, COAST 265, DEADRECKON 170, LIVE **9** | **0 in 47 %, 5 in 53 %** | p50 **35,8°** | **nein** (keine GNSS-Lösung, kein Fahrversuch) |
+
+### 11.1 Abnahme gegen §10.3
+
+| Kriterium | Ziel | gemessen (Log 1) | Urteil |
+|---|---|---|---|
+| `veh_type` | 2 | **0 in allen Frames** | **nicht erreicht** (Geometrie war nicht im EEPROM) |
+| `wq` / `wheel_deg` | 0 / kein −91 | **wq = 0 ✓**, `wheel_deg` = −91,0° | halb: Netz greift, Wert bleibt Müll |
+| `rl_clip` | 25…30 % | **83,0 %** | nicht erreicht (L = 2,50 m statt 0,92) |
+| `pc_ok` | ≥ 20 % | **62,6 %** (nur LIVE 50,3 %) | **weit übertroffen** |
+| `\|Δaz\|/\|Δatt\|` in Kurven | > 80 % | **0,89** (503 Kurvenframes) | **erreicht** |
+| — | — | `rej = baseLen` **300 (24 %)** | neue Baustelle: Basislinie 0,710 gegen 0,824 |
+
+### 11.2 Die vier Folgen der fehlenden Geometrie (Boot-Zeile als Beleg)
+
+```
+Fahrzeug-Setup geladen: wheelbase=2.14 type=0 cpd=100.0 maxAngle=45.0   (erwartet 0.92/2/?/75)
+HeadingBridge ENABLED: L=2.50m ... base=0.710m
+```
+
+1. `hbIsArticulated()` false → **keine Knick-Schätzung** (`art_half = 0` in allen Frames).
+2. Modell/Halte-Deckel mit **L = 2,50 m** statt 0,92 → `rl_clip` **83 %**.
+3. Basislinien-Referenz **0,710** gegen gelöste **0,824** = +16 % (Toleranz 5 %) → `rej=baseLen`
+   **300 Frames**.
+4. **PGN 253 sendete den rohen Analogen −91°** → AOG zeigt dauerhaft **−90°**.
+
+### 11.3 Das −90°-Rätsel (gelöst, `AutosteerProcessor.cpp:1963`)
+
+`angleForAog = actualAngle` (der rohe Analogwert) und **nur** bei vorhandener Schaetzung
+(`hasAppliedArticulation()`) durch den angewandten Knick ersetzt. Ohne Geometrie gibt es keine
+Schaetzung → −91° ging raus. AOG rechnet nichts weg (`aog_wasoff` = 0 in allen Frames).
+**Im Sim war es richtig, weil dort `vehicleType = 2` gesetzt ist.**
+
+### 11.4 Was daraufhin geändert wurde (Commit `a3d614c`)
+
+1. **PGN 253**: bei Qualität **0** ohne angewandten Knick geht **0** raus („Knick unbekannt")
+   statt des rohen Analogen. Damit ist AOGs −90 und die daraus folgende verdrehte
+   Fahrtrichtungserkennung weg, unabhängig von der Geometrie.
+2. **Knick-Schätzer**: Gate `fixQuality >= 2` → **>= 1**. Begründung: der Schätzer benutzt
+   VTG-Kurs + Dual-Lage, **nicht** die Position; im Log war `fixQ = 1` in **67 %** der Frames
+   (22 Sats, HDOP 0,70), die Positionsschritte waren aber sauber (p50 0,12 / p90 0,17 m bei
+   1,18 m/s, keine Sprunghäufung).
+3. **Hinweis „Antenna ahead of pivot"**: Bereich **−10…+300 cm** (mehr möglich); die alte
+   Warnung „is short (typical > 100 cm)" war für diesen Mäher (41 cm) **dauerhaft falsch**.
+   Gewarnt wird jetzt nur bei Meter-statt-Zentimeter (`|ap| < 2`) und weit hinter dem Gelenk.
+
+### 11.5 Nächste Fahrt — was zu prüfen ist
+
+1. Boot-Log: `Fahrzeug-Setup geladen: wheelbase=0.92 type=2 maxAngle=75`.
+2. AOG: **kein −90°** mehr; sobald die Geometrie steht, zeigt AOG den **berechneten Knick**.
+3. `rl_clip` **83 → ~25 %**, `rej=baseLen` **→ 0** (Basislinie 0,85 eintragen).
+4. Fahrtrichtung in AOG beobachten — die Ursache (konstant −90°) ist beseitigt, das ist die
+   Gegenprobe zu 11.4.
+5. `pc_ok` soll ≥ 50 % bleiben (Log 1 hatte 62,6 %).
+
