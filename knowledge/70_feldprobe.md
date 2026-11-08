@@ -361,3 +361,67 @@ Firmware schreibt `art_half`. Da der Sim keine eigene Kopfzeile schreibt, wurde 
 mit dem falschen Namen gelesen (`art_half` = NULL). Korrigiert — wer `ant_half` benutzt, liest
 sonst den Knickwinkel für „halber Radstand".
 
+
+### 11.7 SOLL-Zustand: beide Logs mit der richtigen Konfiguration nachgefahren (2026-11-08)
+
+Betreiber: „nochmal den Replay beider Logs mit den richtigen Zahlen in der Config, so wie der
+echte Feldlauf nun aussehen müsste." Konfiguration: `SIM_VEH_TYPE=2`, `SIM_WHEELBASE=0.92`,
+`SIM_MAX_STEER=75`, `SIM_ANT_PIVOT=0.41`, `SIM_BASE_REF_M=0.85`, `SIM_DUAL_OFFSET=88`.
+Werkzeug: `tools/analysis/feld_soll_check.ps1 -Ist <Feld-Log> -Soll <Sim-Log>` (nach der Fahrt
+mit vertauschten Rollen noch einmal laufen lassen).
+
+**Log 1 (`Hof 2 vr vermischt`, 1251 Frames, die Fahrfahrt):**
+
+| Kennzahl | IST (Feld) | SOLL (Sim) | Kriterium §10.3 |
+|---|---|---|---|
+`veh_type` | 0 | **2** | **erfüllt** |
+`pc_ok` | 62,6 % | 62,1 % | **erfüllt** (≥ 20) |
+Kurvenverhältnis | 1,01 | **1,19** | **erfüllt** (> 0,8) |
+`rl_clip` (alle Frames) | 83,0 % | **20,1 %** | **erfüllt** (Band 25–30, darunter = besser) |
+`rl_clip` (nur fahrend) | 79,1 % | **15,4 %** | — |
+`rej=baseLen` | 24,0 % (300) | **5,9 % (74)** | nicht erfüllt (< 2 %) |
+`pc_dev` p50 | 0,0° | 0,0° | |
+`baseline_dev` | +16,0 % | **−3,3 %** | (innerhalb 5 %) |
+`art_half` p50 / p90 | 0,0 / 0,0° | 0,3 / **17,6°** | (γ bis 35°, Spitze 65,6°) |
+`state` | COAST 319 / LIVE 925 | **LIVE 954** / BRIDGE 177 / DEADRECKON 66 / COAST 54 | |
+`att_q` | — | 1 = 891 (**71 %**), 0 = 359 | (Ziel war ≥ 80 %) |
+PGN 253 | **0 von 125** mit Knick | **102 von 125 (82 %)**, angewandter Knick **−47,6…+61,3°** | |
+
+**Das „−90 in AOG" ist damit erklärt und beseitigt**: statt des rohen Analogeingangs geht jetzt
+γ/2 mit Vorzeichen, ratenbegrenzt, in der Größenordnung der Bahnkrümmung (B10.96).
+
+**Wo die Reste liegen (Zeitverlauf SOLL, 20-s-Fenster):**
+
+| t [s] | v | `rl_clip` | `pc_ok` | `baseLen` | `art_half` p50 | Lage |
+|---|---|---|---|---|---|---|
+17 | 1,14 | 11 % | 95 % | 4 | 0,6° | LIVE |
+37 | 1,38 | 11 % | 83 % | 9 | 0,9° | LIVE |
+57 | 1,26 | 0 % | 95 % | **53** | 0,4° | BRIDGE |
+77 | 0,19 | 0 % | 40 % | 1 | 0,0° | LIVE |
+97 | 0,76 | 5 % | 24 % | 5 | **2,8°** | LIVE |
+117 | 1,61 | **73 %** | 53 % | 2 | 0,0° | LIVE |
+137 | 0,00 | 100 % | 0 % | 0 | 0,0° | steht |
+
+* Die **74 `rej=baseLen`** sitzen in **einem** 20-s-Fenster (t = 60…80 s, v 1,26 m/s, BRIDGE 36 /
+  LIVE 27): dort lag die gemessene Basislinie mit p50 **−6,0 %** knapp außerhalb der 5 %-Toleranz.
+  Der Rest verteilt sich auf wenige Einzelframes.
+* `rl_clip` **73 %** im schnellsten Fenster (t = 117 s, v 1,61 m/s) — dort ist der Deckel
+  (kinematisch, aus der Geschwindigkeit) am kleinsten. Über alle **fahrenden** Frames sind es
+  15,4 %.
+* `pc_ok` bricht bei **Schrittgeschwindigkeit** ein (t = 77 s: 40 %, t = 97 s: 24 %) — die Sehne
+  braucht Strecke. Erwartet, kein Fehler.
+* Die **größten Knickwerte liegen bei niedriger Geschwindigkeit** (|γ/2| p50 7,5° / p90 27,5° bei
+  0,5…0,8 m/s gegen p50 0,6° / p90 2,0° bei 1,2…1,6 m/s) — enge Kurven, genau der Fall, für den
+  die Knicklage gebraucht wird.
+
+**Log 2 (`Hof vr vermischt`, 878 Frames): bleibt nicht auswertbar — und daran ist nicht die
+Konfiguration schuld.** `v` p50 **0,03 m/s** (Stillstand), `INIT` 412 → 482, `LIVE` 9 → 15,
+`pc_ok` 5,1 % → 4,4 %. Mit der richtigen Konfiguration ändert sich nichts, weil die Aufzeichnung
+selbst keine brauchbaren Epochen enthält (B10.95: 47 % `qf=0`).
+
+**Gegenprobe Basislinie 0,82 (nicht übernommen):** `baseLen` 74 → **14** (1,1 %), `baseline_dev`
+−3,3 → **+0,5 %**, `LIVE` 954 → **1147**, `att_q=1` 891 → **1076 (86 %)** — aber `rl_clip`
+20,1 → **72,1 %**, weil dann fast jede angewandte Messung am Deckel hängt (`rl_allowed` p50
+73,4 → 48,9 °/s): der Kurs folgt dem Modell, nicht der Messung. Das ist der Zustand, den B10.94
+als schlecht belegt hat. **Plan bleibt 0,85**; die 74 `baseLen`-Frames sind der kleinere Preis.
+

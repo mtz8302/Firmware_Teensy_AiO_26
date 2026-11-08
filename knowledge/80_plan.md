@@ -165,10 +165,17 @@ die Schwellen nachziehen.
    `veh_type` war **0** in allen 1251 Frames, `art_half` 0, `L` = 2,50 m, Basislinie 0,710.
    Erst Basislinie **0,85** (gemessen) oder 0 = lernen, dann `/vwas`: **0,92 / Typ 2 / 75 /
    0,41** (halber Radstand folgt). Danach im Boot-Log `wheelbase=0.92 type=2 maxAngle=75`
-   gegenpruefen und messen. **Im Sim belegt (B10.96, Lauf B+fix)**: `rl_clip` 83,1 -> **20,1 %**,
-   `pc_ok` **62,1 %**, `rej=baseLen` 300 -> 74, Knick in AOG (102 von 125 Sendungen,
-   -47,6...+76,9 Grad). In AOG
-   **kein -90 Grad** mehr (bzw. der berechnete Knick statt 0).2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
+   gegenpruefen und messen.
+   **Im Sim belegt (B10.96, Lauf B+fix, `70_feldprobe.md` 11.7):** `veh_type` 2, `pc_ok` **62,1 %**,
+   Kurvenverhaeltnis **1,19**, `rl_clip` 83,1 -> **20,1 %** (nur fahrende Frames 15,4 %),
+   `rej=baseLen` 300 -> **74** (5,9 %), `baseline_dev` -3,3 %, in AOG **kein -90 Grad** mehr:
+   102 von 125 PGN-253-Sendungen mit Knick, -47,6...+61,3 Grad - **4 von 5 Kriterien**.
+   Log 2 bleibt nicht auswertbar (Stillstand, v p50 0,03 m/s), unabhaengig von der Konfiguration.
+   Basislinie 0,82 getestet und VERWORFEN (baseLen 74 -> 14, aber `rl_clip` 20 -> 72 %), es
+   bleibt 0,85. Nachkontrolle nach der Fahrt: `tools/analysis/feld_soll_check.ps1 -Ist <Feld>
+   -Soll <Sim>`.
+
+2. **pc_ok bleibt begrenzt** (Feld 15,6/20,6 %): die Restursachen `pc_rej=4` (unter 0,2 m/s)
    und `=7` (keine Sehnenprobe) sind laut **B10.53 gemessen** und duerfen NICHT einfach
    aufgeweitet werden (Verfuegbarkeit 74 %, skew p90 4,3 -> 19,1). Wer das verbessern will,
    braucht einen anderen Ansatz als B(v) - z. B. eine zweite, unabhaengige Probe.
