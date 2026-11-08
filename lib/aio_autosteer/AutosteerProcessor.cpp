@@ -81,6 +81,13 @@ static constexpr float    kWasWatchRecoverDeg = 2.0f;   // so viel Bewegung -> w
 // +5 bei 45 Grad - nur 1 Grad ueber dem groessten gemessenen ECHTEN Wert. Mit +10 (50 Grad)
 // bleiben 6 Grad Luft und der Maeher (91) wird trotzdem sofort erkannt.
 static constexpr float    kWasRangeSlackDeg   = 10.0f;  // Zuschlag auf maxSteeringAngle
+// STUFE 2 (Betreiber-Vorgabe 11-07): zusaetzlich wird geprueft, ob sich der BERECHNETE Knick
+// aendert, waehrend der analoge steht. Der Schaetzer der Bridge (gamma aus Lage UND Kurs) ist
+// vom analogen Geber unabhaengig - er traegt also auch dann, wenn nur eine der beiden Quellen
+// da ist. Bewusst die NETTO-Aenderung ueber das Fenster und nicht die Summe der Betraege:
+// Rauschen pendelt hin und her und faellt dabei heraus, eine echte Knick-Aenderung bleibt.
+static constexpr float    kWasWatchArtNetDeg  = 10.0f;  // so viel berechneter Knick netto
+
 
 static inline float wasWrap180(float a) {
     while (a > 180.0f) { a -= 360.0f; }
@@ -97,6 +104,8 @@ struct WasWatch {
     uint32_t windowMs     = 0;
     float    turnDeg      = 0.0f;    // Summe |Lage-Aenderung| im Fenster
     float    angleMoveDeg = 0.0f;    // Summe |Winkel-Aenderung| im Fenster
+    float    artStartDeg  = 0.0f;    // berechneter Knick am Fensteranfang (Stufe 2)
+    bool     artStartOk   = false;   // ... und ob er dort gueltig war
 };
 static WasWatch g_wasWatch;
 
@@ -120,6 +129,9 @@ static bool wasSensorPlausible(float angleDeg, float maxSteerDeg, uint32_t now) 
         g_wasWatch.prevHdgDeg   = hdg;
         g_wasWatch.prevAngleDeg = angleDeg;
         g_wasWatch.prevMs       = now;
+        g_wasWatch.artStartOk   = headingBridge.hasArticulationEstimate();
+        g_wasWatch.artStartDeg  = g_wasWatch.artStartOk
+                                  ? headingBridge.getArticulationEstimateDeg() : 0.0f;
         return g_wasWatch.sensorOk;
     }
     const uint32_t dtMs = now - g_wasWatch.prevMs;
@@ -149,6 +161,25 @@ static bool wasSensorPlausible(float angleDeg, float maxSteerDeg, uint32_t now) 
                         "%.1f Grad - kein Geber vorhanden (Lenkwinkel wird berechnet)",
                         (double)g_wasWatch.turnDeg, (double)g_wasWatch.angleMoveDeg);
         }
+        // STUFE 2 (11-07): zweiter, vom Geber unabhaengiger Zeuge - der BERECHNETE Knick.
+        // Er traegt auch dann, wenn die Lage als Wahrheit ausfaellt, weil gamma aus Lage UND
+        // Kurs gebildet wird. Netto-Aenderung ueber das Fenster, damit Rauschen herausfaellt.
+        if (g_wasWatch.sensorOk && g_wasWatch.artStartOk &&
+            headingBridge.hasArticulationEstimate() &&
+            (g_wasWatch.angleMoveDeg < kWasWatchAngleDeg)) {
+            const float artNet = fabsf(wasWrap180(headingBridge.getArticulationEstimateDeg() -
+                                                  g_wasWatch.artStartDeg));
+            if (artNet > kWasWatchArtNetDeg) {
+                g_wasWatch.sensorOk = false;
+                LOG_WARNING(EventSource::AUTOSTEER,
+                            "WAS: berechneter Knick aendert sich um %.0f Grad, der analoge Geber "
+                            "bewegt sich aber nur %.1f Grad - kein Geber vorhanden",
+                            (double)artNet, (double)g_wasWatch.angleMoveDeg);
+            }
+        }
+        g_wasWatch.artStartOk   = headingBridge.hasArticulationEstimate();
+        g_wasWatch.artStartDeg  = g_wasWatch.artStartOk
+                                  ? headingBridge.getArticulationEstimateDeg() : 0.0f;
         g_wasWatch.turnDeg      = 0.0f;
         g_wasWatch.angleMoveDeg = 0.0f;
         g_wasWatch.windowMs     = 0;
