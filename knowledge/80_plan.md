@@ -159,6 +159,17 @@ die Schwellen nachziehen.
   `ant_half`** statt `art_half` - jeder Sim-Log wurde falsch benannt gelesen.
   **gamma-Hut ist erstmals gegen die Bahnkruemmung geprueft**: r = 0,69, Median-Fehler 2,4 Grad.
 
+* **REPLAY-BEFUNDE des Betreibers abgearbeitet** (B10.97): (a) **Rueckwaertsfahne im 2. Log**
+  - der Re-Seed nach einem Stillstand entschied die Richtung ohne Beleg; das HPR-Gate
+  akzeptierte dann einen um 180 Grad verdrehten Kurs, und genau daraus leitet AOG
+  seine Rueckwaerts-Anzeige ab (die 253 hat kein Rueckwaerts-Bit). rev=1 253 -> **0**.
+  (b) **Knickwinkel geglaettet**: der Sim sendet jetzt wie die Firmware den ANGEWANDTEN
+  Wert (statt der Rohschaetzung: Spitzen 76,9 -> 65,2 Grad, |p90| 47,6 -> 31,1); neu
+  `artEstAvgN` = 30 (gleitender Mittelwert 0,3 s, p50 0,50 -> 0,40 Grad/100 ms) und
+  `artEstMinRunTicks` = 50 (keine Veroeffentlichung von Kurz-Aufblitzern; Log 1
+  `art_half` p50 0,31 -> 0,23). Tiefpass-Verdopplung getestet und verworfen (-18 %
+  Rauschen fuer +0,6 s Verzoegerung). Kriterien unveraendert.
+
 **Offen, priorisiert:**
 
 1. **NAECHSTE FAHRT: die Geometrie muss ins GEPLAETTE EEPROM** (Feldtest 11-08, B10.95):
