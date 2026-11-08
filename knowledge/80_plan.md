@@ -124,6 +124,16 @@ die Schwellen nachziehen.
   **Hinweis**: `physicalBaselineDefaultM = 0.711 m` steht weiter als Build-Default im Code
   (Begruendung B10.91: die geloeste Laenge dieser Maschine ist 0,83 m → +17 % → Default
   drosselt). **Offene Entscheidung**: Default auf 0 („lernen") setzen?
+* **Hauptseite und Dateiname** (Betreiber 2026-11-07): das Uhr-Symbol bei „Vehicle settings"
+  ist ein **Traktor**, und der Abstand zur Unterzeile wirkt jetzt — `.nav-menu a` ist
+  `display:flex`, dort ist ein `<br>` WIRKUNGSLOS (deshalb half das Leerzeichen nicht);
+  die zweizeiligen Eintraege sind jetzt eine Flex-Spalte. Datei umbenannt wie die anderen:
+  `VWASConfigPage.h` → **`TouchFriendlyVWASConfigPage.h`** (Symbol/Guard/Include/extern
+  mitgezogen, Sim-Kopie gleich).
+* **Stufe 2 der Geber-Erkennung** (B10.93): der BERECHNETE Knick (gamma aus Kurs + Lage) ist
+  jetzt ein zweiter Zeuge — netto > 10 Grad im Fenster bei stehendem Geber.
+* **`kOutHardRateDegS = 200 °/s` rechnerisch abgesichert** (B10.94): klemmt erst oberhalb von
+  **32 km/h bei 40 Grad** Vollausschlag — Punkt geschlossen.
 
 **Offen, priorisiert:**
 
@@ -136,35 +146,22 @@ die Schwellen nachziehen.
    braucht einen anderen Ansatz als B(v) - z. B. eine zweite, unabhaengige Probe.
 3. **IMU-Rate in BRIDGE/COAST** (B10.83): im IMU-Log 0 % trotz `imu_q = 10` und 4...6 m/s.
    Betrifft nur Fahrzeuge MIT IMU; bewusst nicht weiter verfolgt (Maeher hat keine).
-4. **ERLEDIGT 2026-11-07: Analog-Geber-Erkennung, Stufe 2** (B10.93): zusaetzlich prueft jetzt
-   der BERECHNETE Knick (gamma aus Kurs + Lage, nicht vom Geber abhaengig), ob sich der Knick
-   aendert, waehrend der analoge steht (netto > 10 Grad im 10-s-Fenster, Geber < 1 Grad).
-5. **WIDERLEGT 2026-11-07: „Ursache 2 — der Pfad-Begrenzer frisst echte Kurven"**.
-   Im Feld-Replay ist `rl_path` in **0 von 3638** Frames aktiv (> 0,5 Grad/s). Die 18,6 %
-   nicht publizierter Kurvendrehung sind 221 Grad in 9 INIT-Frames plus 382 Grad ueber
-   816 LIVE-Frames (0,5 Grad/Frame, Ratenklassen breit verteilt, kein Deckel) — also
-   normaler Filter-Nachlauf, kein Fehler. Punkt geschlossen; nicht wieder aufmachen,
-   ohne einen Log zu zeigen, in dem `rl_path` ungleich 0 ist.
-6. **GESCHLOSSEN 2026-11-07: der Modellskala-Widerspruch** (B10.86). Regel: `effWheelbaseFac` bleibt
-   **1,0**. Fuenf HR-Logs, zwei unabhaengige Wahrheiten (Lage-Rate und Kurs-Rate), nur eindeutige
-  1-s-Fenster: L_eff **2,04…2,53 m**, Median **2,2 m** gegen 2,14 m nominal → Faktor **1,03**.
-   Die alten 1,38 und 1,30 sind Artefakte der Schaetzung (pro Frame ist die Lage-Rate bei kurzer
-  Basislinie zu verrauscht: Kreuzkorrelation flach bei r = 0,02…0,13; ohne Signalschwelle setzt
-  Rauschen den Quotienten). **1,30 nicht wieder einfuehren** ohne eine Messung mit Signalschwelle,
-  Drehsinn-Pruefung und beiden Wahrheiten.
-7. **GESCHLOSSEN 2026-11-07: `outSnapConfirmMs` war wirkungslos** (B10.88). Die Karenz mass die Zeit
-   ab dem laufenden Frame statt ab dem Beginn der Bestaetigung und war bei 10 Hz sofort erfuellt.
-   Jetzt haelt der Zweig wieder einen Frame, ein echter Sprung verzoegert sich um genau einen
-   Bestaetigungsframe. **Im Sim neutral** (403 -> 401 Spruenge > 3 Grad), weil der Referenz-Log
-   eine saubere RTK-Fahrt ist; die Wirkung ist auf einem Log mit gestoerter Lage zu zeigen.
-   Offen bleibt: 1.2a/1.2b (`attPathTol`) nicht gebaut.
+4. **Entscheidung offen**: `physicalBaselineDefaultM` von 0.711 m auf **0 (lernen)** setzen?
+   Mit 0,711 als Build-Default drosselt jede Maschine, deren Antennenabstand davon abweicht
+   (11-07: geloest 0,83 m = +17 %, Toleranz 5 %) - siehe B10.91/B10.92.
+5. **Entscheidung offen**: sollen die ~12 untracked Feld-Logs (ca. 10 MB, inkl. 11-07) ins
+   Sim-Repo? Es versioniert bereits 224 Logs.
 
-8. **Sim-Repo-Hygiene**: erledigt 2026-11-07 (115 Build-Artefakte aus dem Index, `.gitignore`).
-   Offen bleibt nur die Entscheidung, ob die ~12 untracked Feld-Logs ins Repo sollen.
-
-
-
-
+**Geschlossen bzw. widerlegt am 2026-11-07** (Belege in `10_heading.md`): Modellskala-Widerspruch
+(B10.86, Fac bleibt 1,0); "Ursache 2 = Pfad-Begrenzer frisst Kurven" (B10.84, `rl_path` in 0 von
+3638 Frames aktiv); 1.2a/1.2b (B10.89 - die Ausgabe ist spaet bzw. ratebegrenzt, nicht falsch
+ausgewaehlt); `outSnapConfirmMs` (B10.88, war wirkungslos); Epochen-Bewertung (B10.92,
+ableitbar mit `att_why.ps1`, keine neue Spalte); Analog-Erkennung Stufe 2 (B10.93);
+`kOutHardRateDegS` 200 Grad/s (B10.94, klemmt erst ueber 32 km/h bei Vollausschlag);
+Sim-Repo-Hygiene (115 Build-Artefakte aus dem Index, `.gitignore`); Web-Texte ohne
+fahrzeugspezifische Beispielwerte; Hauptseite (Traktor-Symbol, echter Abstand); Datei
+`TouchFriendlyVWASConfigPage.h`.
+### Stand bis 2026-11-06 (ueberholt - nur noch als Verlauf)
 
 **Erledigt** (Belege: **B10.73...B10.79** in `10_heading.md`, neu `90_aog_messages.md`):
 
