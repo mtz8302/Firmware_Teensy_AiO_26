@@ -124,12 +124,21 @@ die Schwellen nachziehen.
   **Hinweis**: `physicalBaselineDefaultM = 0.711 m` steht weiter als Build-Default im Code
   (Begruendung B10.91: die geloeste Laenge dieser Maschine ist 0,83 m → +17 % → Default
   drosselt). **Offene Entscheidung**: Default auf 0 („lernen") setzen?
-* **Hauptseite und Dateiname** (Betreiber 2026-11-07): das Uhr-Symbol bei „Vehicle settings"
-  ist ein **Traktor**, und der Abstand zur Unterzeile wirkt jetzt — `.nav-menu a` ist
-  `display:flex`, dort ist ein `<br>` WIRKUNGSLOS (deshalb half das Leerzeichen nicht);
-  die zweizeiligen Eintraege sind jetzt eine Flex-Spalte. Datei umbenannt wie die anderen:
-  `VWASConfigPage.h` → **`TouchFriendlyVWASConfigPage.h`** (Symbol/Guard/Include/extern
-  mitgezogen, Sim-Kopie gleich).
+* **Hauptseite und Dateinamen** (Betreiber 2026-11-07): das Uhr-Symbol bei „Vehicle Settings"
+  ist ein **Traktor als Profil-Silhouette** (Kabine hoch → Haube → schmaler Auspuff → Haube →
+  Front → unten horizontal zurueck; die Raeder liegen hinter dem Koerper). Der Abstand zur
+  Unterzeile war nicht loesbar, weil `.nav-menu a` **`display:flex`** ist — dort ist ein `<br>`
+  wirkungslos (deshalb half das Leerzeichen nicht); am Ende sind die **Unterzeilen ganz
+  entfallen**: nur „Vehicle Settings" und „Messages & Languages", jedes Wort gross.
+  Dateien auf die TouchFriendly-Konvention gezogen: `VWASConfigPage.h`, `HwMsgPage.h`,
+  `DragDropCANConfigPage.h`, `CANConfigUploadPage.h` → `TouchFriendly…` (Symbol, Guard,
+  Include und extern mitgezogen; Routen und Methodennamen unveraendert).
+  **Nebenbefund**: der Include von `SimpleDeviceSettingsNoReplace.h` war TOT (Symbol nirgends
+  benutzt, `/device` nimmt `TOUCH_FRIENDLY_DEVICE_SETTINGS_PAGE`) → entfernt; damit lag eine
+  komplette Seite ungenutzt im Flash. Ungenutzte Altlasten bleiben ausserdem
+  `SimpleAnalogWorkSwitchPage.h`, `SimpleEventLoggerPage.h`, `SimpleHomePage.h`,
+  `SimpleNetworkPage.h`, `SimpleOTAPageFixed.h`, `SimpleUM98xConfigPage.h` und
+  `TouchFriendlyCANConfigPage.h` (werden nirgends included).
 * **Stufe 2 der Geber-Erkennung** (B10.93): der BERECHNETE Knick (gamma aus Kurs + Lage) ist
   jetzt ein zweiter Zeuge — netto > 10 Grad im Fenster bei stehendem Geber.
 * **`kOutHardRateDegS = 200 °/s` rechnerisch abgesichert** (B10.94): klemmt erst oberhalb von
