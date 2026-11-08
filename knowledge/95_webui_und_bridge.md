@@ -5,6 +5,14 @@ hatte nie eine schriftliche Beschreibung — hier wird sie nachgeholt. Grundlage
 Bericht und der Code; jede Aussage hat eine Fundstelle (`Datei:Zeile`). Was nur aus einem
 Code-Kommentar stammt und nicht gegengeprüft ist, steht ausdrücklich dabei (Abschnitt 7).
 
+**Abgrenzung**: Diese Datei gehört zum **AiO-Firmware-Repo** und beschreibt den **Teensy** und die
+**ESP32-Bridge** (der ESP32 sitzt auf derselben Platine wie der Teensy, deshalb bleibt seine Doku
+hier). Alles, was die **Modul-Seite** selbst betrifft — die Section Control mit ihrem Seitenbau,
+ihren zwei Servern (WiFi + W5500), den JS-Helfern und der Bibliotheks-Kopie `Ethernet_Amas` —
+steht im jeweiligen Modulprojekt, für die Section Control in
+`AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md`.
+
+
 ## 1. Die Topologie
 
 ```
@@ -97,72 +105,22 @@ ESP32, nicht für den PC am LAN.
 | B11.6 | **UART-Protokoll Teensy ↔ Bridge** | Anfrage `FE 01 [len_hi][len_lo][url]`, URL ≤ 400 Byte, Rest wird nachgelesen (500-ms-Deadline) (`…ino:363…384`). Antwort `FE 02 [len_hi][len_lo][body]` (`…ino:604…610`). Der Puffer ist 512 Byte groß, weil darüber auch die PGN-Pakete laufen (`…ino:159…160`). |
 | B11.7 | **Modulliste der Bridge (`DynModules`)** | Die Bridge kennt die Module aus dem **erweiterten PGN 203**: sie schickt den AgIO-IP-Scan (`0x80 0x81 0x7f 0xca 0x03 0xca 0xca 0x05 0xE5`, CRC 0xE5, `…ino:262`) ins WLAN; Module antworten klassisch (13 Byte, nur IP) oder **erweitert (149 Byte)** mit `shortname[12]`, `longname[20]`, `description[100]` und CRC (`zAOG_AiO_WebInterface.ino:179…215`). Daraus füllt sich `DynModules[]` (`:55`), und genau diese Namen löst der Proxy auf — `ip_ending` ist dabei **nur die letzte Oktette**, alle Module müssen also im /24 des AP liegen (`…ino:527…538`). |
 | B11.8 | **`/api/modules` für die Startseite** | Der Teensy holt die Modulliste über denselben UART-Weg (`SimpleWebManager.cpp:293…296` → `handleApiModules`, `:982`); die Startseite baut daraus ihre Zeilen (JavaScript `loadModules()`, `TouchFriendlyHomePage.h`). Damit erscheinen neue Module ohne Firmware-Änderung im Menü. |
-| B11.9 | **Eine Seite, zwei Server (Modul-Firmware)** | Die Section-Control-Firmware erzeugt ihre Seite **einmal**: `HTML_Buffer` = **ein** 80-kB-Heap-Puffer, auf den `HTML_Str_SC` und `HTML_Str_Settings` zeigen (`zAOG_SCfeature_EthWebServer.ino:19…36`). Gebaut wird mit `make_HTMLSC()`, `make_HTMLSettings()`, `make_HTMLExpert(grp)`, `make_OTA_HTML()`; geändert wird mit demselben `process_Setting(name, wert)`. Beides benutzen **beide** Server: der WiFi-Server (`zAOG_SC_WebInterface.ino`) und der Ethernet-Server `EthernetServer Eth_Web_Server(80)` (`AOG_Section_Control_ESP32.ino:149`, Handler `zAOG_SCfeature_EthWebServer.ino:94…115`). Der Kommentar dort sagt es ausdrücklich: „Uses the shared `process_Setting()` and `make_HTML*()` functions" (`:8`). **Der einzige Unterschied ist das Parsen der Anfrage**: über WiFi nimmt `process_Request()` die Argumente des Web-Servers (`for n < WiFi_Server.args()`, `zAOG_SC_WebInterface.ino:965…976`), über Ethernet parst der Handler die Query-Zeichenkette selbst (`zAOG_SCfeature_EthWebServer.ino:55`) und ruft danach dieselbe `process_Setting()` — ab da ist der Weg identisch. |
-| B11.10 | **`Ethernet_Amas` = Arduino Ethernet 2.0.2, nur UMBENANNT (2026-11-07 nachgemessen)** | Die Section-Control hat eine projekteigene Kopie: `AOG_Section_Control_ESP32/libraries/Ethernet-Amas/` mit `library.properties` → `name=Ethernet_Amas`, `version=2.0.2`; eingebunden als `#include "libraries/Ethernet-Amas/src/Ethernet_Amas.h"` (`AOG_Section_Control_ESP32.ino:135`), damit die **globale** Installation unangetastet bleibt (der auskommentierte Include in `:136` nennt den Grund). **Beweis, dass kaum etwas geändert wurde** — Dateigröße gegen die Upstream-Rohdateien von Tag `2.0.2` verglichen: `Dhcp.h` **0** Byte Differenz, `Dns.h` / `EthernetClient.cpp` / `EthernetServer.cpp` je **+5** (das ist genau `_Amas` in der `#include "Ethernet.h"`-Zeile), `w5100.cpp` **+36** (relativer Include `#include"..\Ethernet_Amas.h"` in `src/utility/`, Zeile 12/13), `w5100.h` **+253** (siehe B11.12). Dazu **eine** Markierung: `Ethernet_Amas.h:23` → `#define ETHERNET_AMAS_LIB 1  // marker: Ethernet-Amas library found`. Der Include-Guard bleibt `ethernet_h_` (`:21…22`), deshalb funktioniert der `#error`-Check in `w5100.h:39…40` unverändert. **Wichtig**: die `#if defined(ESP8266) || defined(ESP32)`-Klammer in `EthernetClient.cpp:50` und der ESP8266-SS-Pfad in `utility/w5100.h:413…` stehen **schon im Upstream** — das ist KEINE Anpassung des Betreibers (erste Fassung dieser Doku behauptete das, hiermit korrigiert). |
-| B11.11 | **mDNS auf dem Modul** | `MDNS.begin(Set.shortname)` + `MDNS.addService("http","tcp",80)` — auch im AP-Modus (`zAOG_SC_Network.ino:131…136`, `:200…205`). Der Kurzname ist derselbe, den das Modul im erweiterten PGN 203 meldet; damit stimmen `sc.local` (im WLAN) und `sc.aog` (über die AiO) überein. Die Bridge selbst meldet sich als `wifi.local` (`zAOG_AiO_Network.ino:239`). |
-| B11.12 | **Die EINZIGE funktionale Änderung in der Ethernet-Kopie: die SPI-Frequenz ist einstellbar** | Upstream `w5100.h:26` setzt `#define SPI_ETHERNET_SETTINGS SPISettings(14000000, MSBFIRST, SPI_MODE0)` fest. In der Kopie ist daraus ein überschreibbarer Wert geworden: `:26 #ifndef SPI_ETHERNET_SETTINGS` / `:27 #define … SPISettings(ETH_SPI_FREQ, MSBFIRST, SPI_MODE0)` / `:21` Kommentar „Projects can override this before `#include <Ethernet.h>` by defining `SPI_ETHERNET_SETTINGS`". Dazu ein `#ifndef` um den 30-MHz-Hinweis (`:35`). Das ist der Grund, warum ein Projekt den Takt für **W5500 am ESP32** passend setzen kann, ohne die Bibliothek anzufassen — und es erklärt den Größensprung `w5100.h` **+253 Byte** (B11.10). **Alles andere in der Kopie ist Upstream.** |
+| B11.9 | **Die Modulseite selbst (Section Control)** | Bau der Seite, die zwei Server (WiFi + W5500-Ethernet), die JS-Helfer und die Bibliotheks-Kopie sind **im SC-Projekt** dokumentiert: `AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md`. Hier steht nur, was der Teensy davon wissen muss: die Seite präfixt ihre Navigations- und AJAX-Pfade **selbst** (`moduleBase()`/`murl()`), weil der Teensy nur HTML umschreibt und kein JavaScript - und die Sticky-Session (B11.5) ist das Netz darunter. |
 
-| B11.11 | **mDNS auf dem Modul** | `MDNS.begin(Set.shortname)` + `MDNS.addService("http","tcp",80)` — auch im AP-Modus (`zAOG_SC_Network.ino:131…136`, `:200…205`). Der Kurzname ist derselbe, den das Modul im erweiterten PGN 203 meldet; damit stimmen `sc.local` (im WLAN) und `sc.aog` (über die AiO) überein. Die Bridge selbst meldet sich als `wifi.local` (`zAOG_AiO_Network.ino:239`). |
+### 4.1 Was der Teensy von der Modulseite erwarten muss
 
+Für den Proxy ist nur eines wichtig: **die Seite muss ihre eigenen Pfade präfixen können.** Der
+Teensy schreibt im HTML nur `href=`, `action=`, `src=`, `window.open(`, `location.href=` und
+`sendVal(` um (`SimpleWebManager.cpp:183...191`) - **kein JavaScript**. Alles, was per JS navigiert
+oder AJAX ruft, muss das Modul selbst mit dem Präfix versehen.
 
-### 4.1 Die Section-Control-Seite konkret (das Beispiel-Modul)
+Die Section Control macht das mit `moduleBase()`/`murl()` (aus dem geladenen Pfad abgeleitet) und
+`gotoModule()`/`openModule()`/`sendVal()` - Einzelheiten und die Regel für neue Module stehen in
+der SC-Doku, Abschnitt 5. **Für ein neues Modul heißt das**: ohne dieses Muster läuft die Seite
+im WLAN, aber nicht über `sc.aog`.
 
-`make_HTMLSC()` baut die Hauptseite, `make_HTMLSettings()` die Einstellungsseite. Sie ist in
-`<section>`-Blöcke gegliedert, jede Überschrift mit `data-i18n-key` (also übersetzbar):
-
-| Abschnitt (Zeile in `zAOG_SC_WebInterface.ino`) | Inhalt |
-|---|---|
-| `Navigation` (`:1050`) | Sprungmarken + Links auf `/settings`, `/json`, `/expert`, `/serverIndex` (`:1076…1079`) |
-| `Schaltverzögerung & Timing` (`:1122`) | Verzögerungen beim Schalten |
-| `4/6 Teilbreiten Logik` (`:1137`), `2 Schalter / 1 Teilbreite` (`:1151`) | Sonderlogiken für ungerade Teilbreiten |
-| `Tunnel / Gestänge` (`:1167`), `Ansteuerung Relais Gestänge` (`:1287`) | Gestänge-/Tunnelrelais |
-| `Einstellungen für das Verhalten der Gestängeschalter` (`:1237`), `Minimale Position zum Spritzen` (`:1267`) | Schwellen und Verhalten |
-| `Recycling Verzögerung` (`:1316`) | Recycling |
-| `Lipco Hydraulik` (`:1329`): `Deichsel Links/Rechts`, `Höhe Auf/Ab`, `Achse Links/Rechts` (`:1332…1348`) | herstellerspezifische Hydraulik |
-| `AgOpenGPS Spurlinie wechseln` (`:1362`) | Spurlinienwechsel per Taster |
-| `Ein-/Ausgänge & Teilbreiten` (`:1370`) | Zuordnung der Ein-/Ausgänge |
-
-Dazu `make_HTMLExpert(grp)` als eigene Seite `/expert` (Expertenwerte, `:101…108`), `make_OTA_HTML()`
-für das Update und `handleStyleCSS()` für das gemeinsame CSS mit `Cache-Control: max-age=86400`
-(`:979…999`).
-
-**Ablauf einer Änderung** (für beide Server gleich):
-1. Anfrage mit Query, z. B. `/?h_delays=…` oder `/?Save=true`.
-2. Für jedes Paar `process_Setting(name, wert)` (`:234`) — Wert übernehmen, `action` setzen.
-3. **Dauerhaft** wird es erst mit `Save=true` → `EEprom_write_all()` (`:253`, `:267`); die Seite
-   sagt das dem Nutzer auch („Geänderte Werte werden erst nach Klick auf Speichern dauerhaft im
-   EEPROM abgelegt", `:2598`, Knopf `sendVal('/?Save=true')` in `:1104`).
-4. Seite wird neu gebaut → der neue Wert ist sofort sichtbar.
-
-### 4.2 Wie die Modulseite ihre eigenen Links richtig hält (wichtig für neue Module)
-
-Der Teensy schreibt HTML um, aber **kein JavaScript**. Deshalb bringt die Modulseite ihre eigenen
-Helfer mit, und die leiten das Präfix **aus dem Pfad ab, unter dem sie geladen wurde**
-(`zAOG_SC_WebInterface.ino:1027…1035`):
-
-```js
-moduleBase()  // "/sc/settings" -> "/sc" ;  "/" -> "" ;  "/sc" -> "/sc"
-murl(url)     // "/settings" + moduleBase() -> "/sc/settings"
-gotoModule(u) // location.href = murl(u)
-openModule(u) // window.open(murl(u))
-sendVal(u)    // XMLHttpRequest auf murl(u)   (alle AJAX-Aufrufe der Seite)
-```
-
-Jeder Block ist mit `if(typeof X!=='function')` geschützt — die Seite kann also von außen
-überschrieben werden, ohne dass sie sich selbst stört.
-
-**Das ist der Grund, warum `openModule('/expert')` über die AiO funktioniert**, obwohl
-`rewriteModuleHtml()` diesen Ausdruck **nicht** kennt (die Muster dort sind nur `href=`, `action=`,
-`src=`, `window.open(`, `location.href=`, `sendVal(` — `SimpleWebManager.cpp:183…191`). Zwei
-Mechanismen greifen also zusammen:
-
-* **HTML-Umschreibung im Teensy** für alles, was im Markup steht (Links, Formulare, Bilder),
-* **`murl()` in der Modulseite** für alles, was JavaScript baut,
-* und als Netz darunter die **Sticky-Session** (30 s) für Pfade, die durch beide Raster fallen.
-
-Wer ein neues Modul schreibt, sollte deshalb **genau dieses Muster** verwenden (`moduleBase`/
-`murl` + `openModule`/`sendVal`) — sonst funktioniert die Seite im WLAN, aber nicht über `sc.aog`.
-
+Inhalt, Gliederung und Speicher-Ablauf der SC-Seite (`make_HTML*()`, `process_Setting()`,
+`Save=true` -> `EEprom_write_all()`) sind bewusst **nicht** hier, sondern im SC-Projekt.
 
 ## 5. Grenzen und Fallstricke (aus dem Code, nicht geraten)
 
@@ -178,7 +136,7 @@ Wer ein neues Modul schreibt, sollte deshalb **genau dieses Muster** verwenden (
   Alias-Weg (`sc.aog`) und der IP-Pfad sind davon **nicht** betroffen, weil sie das Modul im Pfad
   tragen.
 * **Der PC braucht kein mDNS.** `sc.aog` funktioniert allein über die DNS-Antwort des Teensy
-  (B11.2). `.local` über mDNS (B11.3/B11.11) ist die Zugabe für Geräte **im** ESP32-WLAN.
+  (B11.2). `.local` über mDNS (B11.3; das Modul selbst meldet sich per mDNS, siehe SC-Doku) ist die Zugabe für Geräte **im** ESP32-WLAN.
 
 ## 6. Datei-Karte
 
@@ -191,40 +149,34 @@ Wer ein neues Modul schreibt, sollte deshalb **genau dieses Muster** verwenden (
 | UART-Protokoll (Teensy-Seite) | `lib/aio_communications/ESP32Interface.cpp/.h` |
 | Startseite (Modulliste) | `lib/aio_system/web_pages/TouchFriendlyHomePage.h` |
 | Bridge (ESP32) | `AOG_AiO_ESP32XIAO_serial_to_WiFi_bridge/`: `AOG_AiO_…bridge.ino` (Proxy, Modulliste), `zAOG_AiO_WebInterface.ino` (eigene Seiten, PGN 203), `zAOG_AiO_Network.ino` (AP, mDNS) |
-| Modul-Firmware (Section Control) | `AOG_Section_Control_ESP32/`: `zAOG_SC_WebInterface.ino` (Bauer), `zAOG_SCfeature_EthWebServer.ino` (Ethernet-Server), `zAOG_SC_Network.ino` (WiFi/mDNS), `libraries/Ethernet-Amas/` |
+| Modul-Firmware (Section Control) | **nicht hier** - siehe `AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md` |
 
 ## 7. Was geprüft ist — und was offen bleibt
 
-**Erledigt am 2026-11-07** (die erste Fassung hatte hier vier offene Punkte; drei sind geklärt):
+Diese Datei beschreibt nur, was **Teensy und Bridge** tun. Alles, was die **Modulseite selbst**
+betrifft (Bau, Gliederung, die zwei Server, die JS-Helfer, die Bibliotheks-Kopie `Ethernet_Amas`),
+steht im SC-Projekt: `AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md`. Dort sind auch die
+dortigen offenen Punkte gepflegt.
 
-1. **`Ethernet_Amas`: geklärt durch Größenvergleich mit den Upstream-Rohdateien von Tag `2.0.2`.**
-   Ergebnis: die Kopie ist **unverändert bis auf die Umbenennung** und **eine** funktionale
-   Änderung (SPI-Frequenz überschreibbar, B11.12). Belege: `Dhcp.h` ±0 Byte, `Dns.h`/
-   `EthernetClient.cpp`/`EthernetServer.cpp` je +5 (`_Amas` im Include), `w5100.cpp` +36
-   (relativer Include), `w5100.h` +253 (B11.12). **Grenze dieser Methode**: es ist ein
-   *Größen*-Vergleich, kein zeilengenauer Diff. Eine gleich große Änderung an zwei Stellen würde
-   sie nicht finden; bei diesen Deltas ist die Zuordnung aber eindeutig (jedes passt genau auf
-   eine bekannte Textstelle).
-2. **`Dns.h`/`Dhcp.h`: geklärt** — `Dhcp.h` ist byte-gleich, `Dns.h` hat nur den umbenannten
-   Include. **In der ESP32-Kopie der Bibliothek gibt es also keine DNS-Änderung.** Die
-   DNS-Erweiterung, die das Ganze trägt, sitzt auf dem **Teensy** (`DHCPLite::DNSreplyMulti`,
-   B11.1) und im Modul (mDNS, B11.11).
-3. **Inhalt der Modul-Seite: dokumentiert** (Abschnitt 4.1) — Gliederung, Speicher-Ablauf und die
-   JS-Helfer (`moduleBase`/`murl`) samt der Regel, die neue Module einhalten müssen (4.2).
-4. **Praxiserprobung**: der Betreiber hat nach eigener Auskunft **viele Module** über den
-   Alias-Weg getestet (2026-11-07). Belegt ist damit die Mechanik in der Breite; eine
-   modulweise Testliste gibt es nicht und ist für die Doku auch nicht nötig.
+**Geprüft (2026-11-07):**
+
+1. **`Ethernet_Amas` ist Arduino Ethernet 2.0.2, nur umbenannt** — per Größenvergleich gegen die
+   Upstream-Rohdateien von Tag `2.0.2` (`Dhcp.h` ±0, `Dns.h`/`EthernetClient.cpp`/
+   `EthernetServer.cpp` je +5 = `_Amas` im Include, `w5100.cpp` +36, `w5100.h` +253 = die eine
+   funktionale Änderung). Einzelheiten in der SC-Doku. **In der ESP32-Kopie gibt es keine
+   DNS-Änderung** — die DNS-Erweiterung, die das Ganze trägt, sitzt auf dem Teensy
+   (`DHCPLite::DNSreplyMulti`, B11.1).
+2. **Praxiserprobung**: der Betreiber hat nach eigener Auskunft **viele Module** über den
+   Alias-Weg getestet (2026-11-07); die Mechanik ist damit in der Breite belegt.
 
 **Weiter offen (bewusst):**
 
 * **Welche Module es aktuell gibt** (Namen, `ip_ending`, Kurznamen) — das ist Zustand, nicht
   Architektur; es steht in der `DynModules`-Liste der Bridge im EEPROM und auf der Startseite.
-* **Der zeilengenaue Diff von `Ethernet_Amas`** gegen Upstream — nur nötig, wenn die Bibliothek
+* **Mehrere Module in mehreren Browser-Tabs** gleichzeitig: die Sticky-Session (B11.5) bevorzugt
+  das zuletzt benutzte Modul. Beschrieben, aber kein Testfall.
+* **Zeilengenauer Diff** von `Ethernet_Amas` gegen Upstream — nur nötig, wenn die Bibliothek
   selbst angefasst werden soll.
-* **Das Verhalten bei mehreren Modulen in mehreren Tabs** (Sticky-Session) ist beschrieben, aber
-  nicht als Testfall festgehalten.
-
-
 ## 8. Kurzfassung für Entwickler (falls nur 30 Sekunden Zeit sind)
 
 * Der Teensy ist **DNS-Server für `*.aog`** und antwortet mit seiner eigenen IP; danach entscheidet
@@ -234,11 +186,10 @@ Wer ein neues Modul schreibt, sollte deshalb **genau dieses Muster** verwenden (
   als `FE 02 …` zurück.
 * Der Teensy schreibt die Pfade im HTML um (`/settings` → `/sc/settings`) und hält 30 s eine
   Sticky-Session, damit relative Links aus der Modul-Seite beim richtigen Modul bleiben.
-  **JavaScript kann er nicht umschreiben** — dafür bringt die Modulseite `moduleBase()`/`murl()`
-  mit und präfixt ihre eigenen Aufrufe selbst (Abschnitt 4.2). Neue Module müssen das genauso
-  machen, sonst laufen sie nur im WLAN.
-* Die Modul-Firmware erzeugt **eine** Seite und verarbeitet Einstellungen **einmal**
-  (`make_HTML*()`, `process_Setting()`), angeboten über WiFi **und** W5500-Ethernet. Die
-  mitgelieferte `Ethernet_Amas` ist Arduino Ethernet 2.0.2, nur umbenannt, mit **einer**
-  Änderung: die SPI-Frequenz ist per `ETH_SPI_FREQ` überschreibbar (B11.10/B11.12).
+  **JavaScript kann er nicht umschreiben** — dafür präfixt die Modulseite ihre eigenen Aufrufe
+  selbst (`moduleBase()`/`murl()`, Abschnitt 4.1). Neue Module müssen das genauso machen,
+  sonst laufen sie nur im WLAN.
+* **Die Modulseite selbst** (Bau, zwei Server, JS-Helfer, `Ethernet_Amas`) steht in
+  `AOG_Section_Control_ESP32/docs/WEBSEITE_UND_NETZWERK.md` — bewusst nicht hier, weil es zum
+  SC-Projekt gehoert.
 
