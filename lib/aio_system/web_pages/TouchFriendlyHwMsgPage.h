@@ -1,4 +1,4 @@
-// HwMsgPage.h - Sprache und Texte der AOG-Hardware-Meldungen (PGN 221) - 2026-11-06
+// TouchFriendlyHwMsgPage.h - Sprache und Texte der AOG-Hardware-Meldungen (PGN 221) - 2026-11-06
 // ---------------------------------------------------------------------------------
 // AOG blendet diese Texte als Label auf der Karte ein (Config -> Display ->
 // "Hardware Messages" muss dort EIN sein). EN und DE sind im Flash kompiliert,
@@ -10,12 +10,12 @@
 //   .container (1024px) / h1 / .nav-buttons (2 Spalten) / #status / .card / .help-text
 // Bewusst KEIN <h2>: h2 ist in touch.css WEISS und waere auf der weissen Karte unsichtbar.
 
-#ifndef HW_MSG_PAGE_H
-#define HW_MSG_PAGE_H
+#ifndef TOUCH_FRIENDLY_HW_MSG_PAGE_H
+#define TOUCH_FRIENDLY_HW_MSG_PAGE_H
 
 #include <Arduino.h>
 
-const char HW_MSG_PAGE[] PROGMEM = R"rawliteral(
+const char TOUCH_FRIENDLY_HW_MSG_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -323,4 +323,4 @@ load();
 </html>
 )rawliteral";
 
-#endif  // HW_MSG_PAGE_H
+#endif  // TOUCH_FRIENDLY_HW_MSG_PAGE_H

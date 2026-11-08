@@ -22,7 +22,6 @@
 #include "NAVProcessor.h"
 #include "GNSSProcessor.h"
 #include "web_pages/CommonStyles.h"  // Common CSS
-#include "web_pages/SimpleDeviceSettingsNoReplace.h"  // Device settings without replacements
 #include "web_pages/TouchFriendlyEventLoggerPage.h"  // Touch-friendly event logger page
 #include "web_pages/TouchFriendlyLogViewerPage.h"  // Touch-friendly log viewer page
 #include "web_pages/TouchFriendlyAnalogWorkSwitchPage.h"  // Touch-friendly analog work switch page
@@ -33,12 +32,12 @@
 #include "web_pages/TouchFriendlyDeviceSettingsPage.h"  // Touch-friendly device settings
 #include "web_pages/TouchFriendlyNetworkPage.h"  // Touch-friendly network settings
 #include "web_pages/TouchFriendlyAnalogWorkSwitchPage.h"  // Touch-friendly analog work switch
-#include "web_pages/DragDropCANConfigPage.h"  // Drag-and-drop CAN configuration
+#include "web_pages/TouchFriendlyDragDropCANConfigPage.h"  // Touch-friendly drag-and-drop CAN configuration
 #include "web_pages/CANInfoJSON.h"  // CAN info JSON data
-#include "web_pages/CANConfigUploadPage.h"  // CAN config upload page
+#include "web_pages/TouchFriendlyCANConfigUploadPage.h"  // Touch-friendly CAN config upload page
 #include "web_pages/TouchFriendlyDNSAliasPage.h"  // DNS alias configuration page
 #include "web_pages/TouchFriendlyVWASConfigPage.h"  // Touch-friendly virtual WAS configuration page
-#include "web_pages/HwMsgPage.h"       // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
+#include "web_pages/TouchFriendlyHwMsgPage.h"  // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221)
 #include "HeadingMonitor.h"            // HPR heading-health logging (test drive)
 #include "HeadingBridge.h"             // heading/roll fall-back diagnostics
 #include "CANConfigStorage.h"  // LittleFS storage for custom CAN config
@@ -860,13 +859,13 @@ void SimpleWebManager::sendAnalogWorkSwitchPage(EthernetClient& client) {
 }
 
 void SimpleWebManager::sendCANConfigPage(EthernetClient& client) {
-    extern const char DRAG_DROP_CAN_CONFIG_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", DRAG_DROP_CAN_CONFIG_PAGE);
+    extern const char TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE);
 }
 
 void SimpleWebManager::sendCANConfigUploadPage(EthernetClient& client) {
-    extern const char CAN_CONFIG_UPLOAD_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", CAN_CONFIG_UPLOAD_PAGE);
+    extern const char TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE);
 }
 
 void SimpleWebManager::sendVWASConfigPage(EthernetClient& client) {
@@ -878,8 +877,8 @@ void SimpleWebManager::sendVWASConfigPage(EthernetClient& client) {
 // Sprache + Texte der AOG-Hardware-Meldungen (PGN 221) - 2026-11-06
 // ---------------------------------------------------------------------------
 void SimpleWebManager::sendHwMsgPage(EthernetClient& client) {
-    extern const char HW_MSG_PAGE[];
-    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", HW_MSG_PAGE);
+    extern const char TOUCH_FRIENDLY_HW_MSG_PAGE[];
+    SimpleHTTPServer::sendP(client, 200, "text/html; charset=utf-8", TOUCH_FRIENDLY_HW_MSG_PAGE);
 }
 
 void FLASHMEM SimpleWebManager::handleHwMsgConfig(EthernetClient& client, const String& method) {

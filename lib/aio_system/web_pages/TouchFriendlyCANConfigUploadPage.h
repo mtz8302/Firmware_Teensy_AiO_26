@@ -7,12 +7,12 @@
 // CANConfigUploadPage.h
 // Touch-optimized CAN configuration JSON upload page
 
-#ifndef CAN_CONFIG_UPLOAD_PAGE_H
-#define CAN_CONFIG_UPLOAD_PAGE_H
+#ifndef TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE_H
+#define TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE_H
 
 #include <Arduino.h>
 
-const char CAN_CONFIG_UPLOAD_PAGE[] PROGMEM = R"rawliteral(
+const char TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -408,4 +408,4 @@ const char CAN_CONFIG_UPLOAD_PAGE[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-#endif // CAN_CONFIG_UPLOAD_PAGE_H
+#endif // TOUCH_FRIENDLY_CAN_CONFIG_UPLOAD_PAGE_H

@@ -7,12 +7,12 @@
 // DragDropCANConfigPage.h
 // Modern drag-and-drop CAN configuration interface
 
-#ifndef DRAG_DROP_CAN_CONFIG_PAGE_H
-#define DRAG_DROP_CAN_CONFIG_PAGE_H
+#ifndef TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE_H
+#define TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE_H
 
 #include <Arduino.h>
 
-const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
+const char TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1284,4 +1284,4 @@ const char DRAG_DROP_CAN_CONFIG_PAGE[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-#endif // DRAG_DROP_CAN_CONFIG_PAGE_H
+#endif // TOUCH_FRIENDLY_DRAG_DROP_CAN_CONFIG_PAGE_H
