@@ -127,7 +127,7 @@ static inline float hbArticulationHalfDeg(float jointAngleDeg) {
 // L1 (2026-11-06): Obergrenze fuer die gemessene Lagrate, die im HALTEN weitergefuehrt
 // wird. 250 Grad/s liegt ueber allem, was eine Landmaschine physikalisch dreht (der
 // Testmaeher schafft bei 1 m/s und R_min 0,6 m rund 95 Grad/s) und unter dem, was ein
-// Falter der Dual-Lage erzeugt - SprÃƒÂ¼nge faengt ohnehin das kinematische Tor (attJumped).
+// Falter der Dual-Lage erzeugt - Spruenge faengt ohnehin das kinematische Tor (attJumped).
 static constexpr float HB_ATT_RATE_MAX_DEG_S = 250.0f;
 
 // ---------------------------------------------------------------------------
@@ -176,6 +176,19 @@ static bool    s_artHalfHave = false; // wir KENNEN den Knick (auch eingefroren)
 // PGN-253-Ausgabe lesen ihn. AOG knickt die Maschine damit (CVehicle.cs: 0.5 * Winkel).
 static float   s_artEstDeg   = 0.0f;
 static bool    s_artEstValid = false;
+// B10.97 (2026-11-08, Betreiber: "im ersten Log ist der Lenkwinkel gut, aber etwas verrauscht -
+// hier wuerde ein gleitender Durchschnitt helfen"): Ringpuffer fuer einen ECHTEN gleitenden
+// Mittelwert ueber die letzten artEstAvgN Rohwerte von gamma, VOR dem Tiefpass. Der Tiefpass
+// allein (artEstTauS) folgt dem Rauschen zu schnell, weil artEstMaxRateDegS = 100 Grad/s ihn
+// nicht bremst: 2 Grad beta-Rauschen wird bei gamma = 0 mit Faktor ~2,2 verstaerkt.
+// 32 Werte bei 100 Hz = 0,32 s maximale Fensterbreite; die Soll-Breite ist Config::artEstAvgN.
+static float   s_artAvgBuf[32] = { 0.0f };
+static uint8_t s_artAvgIdx = 0;
+static uint8_t s_artAvgFill = 0;
+// B10.97: Anzahl zusammenhaengender gueltiger Schritte. Erst ab Config::artEstMinRunTicks wird
+// der Wert veroeffentlicht - ein kurzes Aufblitzen der Schaetzung (Maschine rollt im Stand kurz
+// ueber 0,5 m/s) ist keine Messung, sondern Rauschen mit voller Verstaerkung.
+static uint16_t s_artRunTicks = 0;
 float HeadingBridge::getArticulationEstimateDeg() const { return s_artEstDeg; }
 // 2026-11-07: der ANGEWANDTE Knickwinkel (gamma) - ratenbegrenzt, eingefroren oder gerampt.
 // Das ist der Wert, den das Heading benutzt; PGN 253 muss DENSELBEN senden, sonst zeigt
@@ -1522,7 +1535,7 @@ void FLASHMEM HeadingBridge::applyMeasurement(float measDeg, float rDeg, uint8_t
     }
 
     // --- state sanity: re-seed instead of correcting the long way around -----
-    // Operator correction 2026-09-29 ("AOG zeigt RÃƒÆ’Ã‚Â¼ckwÃƒÆ’Ã‚Â¤rts, obwohl ich vorwÃƒÆ’Ã‚Â¤rts fuhr").
+    // Operator correction 2026-09-29 ("AOG zeigt Rueckwaerts, obwohl ich vorwaerts fuhr").
     // A heading that is more than reseedBeyondDeg away from a TRUSTED attitude is not a
     // measurement problem - the STATE is wrong (measured: psi walked 124 deg away from a
     // steady qf=4 antenna heading within 1.2 s during a reverse phase, and integrating it
@@ -2697,7 +2710,7 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
     // DERIVATIVE column. It is compared with the innovation at the next measurement,
     // where innovation ~ (steerScale - 1) * X + offset_rad * Q for a scale/offset error
     // - the second column is what makes the wheel angle offset separable from the scale
-    // (operator 2026-09-27: "die Ableitung der Heading-ÃƒÆ’Ã¢â‚¬Å¾nderung zur ÃƒÆ’Ã¢â‚¬Å¾nderung des
+    // (operator 2026-09-27: "die Ableitung der Heading-Aenderung zur Aenderung des
     // Lenkwinkels"), which matters because the VWAS re-trims its zero during a drive.
     // The gate gets the same increments in its own (short) window.
     // P1b (2026-09-30): not while the wheel angle is untrustworthy - then these
@@ -3013,25 +3026,49 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         if ((dM > 0.05f) && (fabsf(beta) < 80.0f)) {
             const float g = 2.0f * atanf((halfL * tanf(beta * 0.0174532925f)) / dM) * 57.2957795f;
             if (fabsf(g) <= config.artEstMaxDeg) {
+                // B10.97: gleitender Mittelwert ueber die letzten config.artEstAvgN Rohwerte,
+                // BEVOR der Tiefpass ihn sieht. Nach einem Ausfall (s_artEstValid false) wird
+                // der Puffer geleert - sonst zieht ein Wert von vor 30 s den Neustart.
+                float gUse = g;
+                const uint8_t nAvgReq = (config.artEstAvgN > 1u) ? config.artEstAvgN : 1u;
+                const uint8_t nAvg    = (nAvgReq > 32u) ? 32u : nAvgReq;   // Puffer ist 32
+                {
+                    s_artAvgBuf[s_artAvgIdx] = g;
+                    s_artAvgIdx = (uint8_t)((s_artAvgIdx + 1u) % 32u);
+                    if (s_artAvgFill < 32u) s_artAvgFill++;
+                    const uint8_t nUse = (s_artAvgFill < nAvg) ? s_artAvgFill : nAvg;
+                    float sum = 0.0f;
+                    for (uint8_t k = 0; k < nUse; k++) {
+                        const uint8_t j = (uint8_t)((s_artAvgIdx + 32u - 1u - k) % 32u);
+                        sum += s_artAvgBuf[j];
+                    }
+                    if (nUse > 0u) gUse = sum / (float)nUse;
+                }
                 // dt-korrekter Tiefpass + physikalische Ratenbegrenzung: roh schwankt gamma um
                 // +-10 Grad (2 Grad beta-Rauschen wird bei gamma=0 mit Faktor ~2,2 verstaerkt).
                 // Fuer die AOG-Darstellung zaehlt: kein Zappeln, keine Spruenge.
                 if (!s_artEstValid) {
-                    s_artEstDeg = g;
+                    s_artEstDeg = gUse;
                 } else {
                     const float a = (dtS > 0.0f) ? (dtS / (config.artEstTauS + dtS)) : 0.2f;
                     const float maxStep = config.artEstMaxRateDegS * ((dtS > 0.0f) ? dtS : 0.1f);
-                    const float delta = (g - s_artEstDeg) * a;
+                    const float delta = (gUse - s_artEstDeg) * a;
                     const float lim   = (delta > maxStep) ? maxStep : ((delta < -maxStep) ? -maxStep : delta);
                     s_artEstDeg += lim;
                 }
-                s_artEstValid = true;
-                artEstDeg   = s_artEstDeg;
-                artEstValid = true;
+                // B10.97: erst nach artEstMinRunTicks zusammenhaengenden Schritten veroeffentlichen.
+                if (s_artRunTicks < 60000u) s_artRunTicks++;
+                const bool publishOk = (config.artEstMinRunTicks == 0u) ||
+                                       (s_artRunTicks >= (uint16_t)config.artEstMinRunTicks);
+                if (publishOk) {
+                    s_artEstValid = true;
+                    artEstDeg   = s_artEstDeg;
+                    artEstValid = true;
+                }
             }
         }
     }
-    if ((speedMps <= 0.5f) || !d.hasDualHeading) { s_artEstValid = false; }
+    if ((speedMps <= 0.5f) || !d.hasDualHeading) { s_artEstValid = false; s_artRunTicks = 0; }
     // 2026-11-06e: ANGEWANDTER Knickwinkel gamma/2 - ratenbegrenzt. Das ist der Wert, der ins
     // Heading (Mittelachse fuer AOG) und nach PGN 253 geht. Begruendung und Messung siehe
     // Config::artEstApplyRateDegS: der rohe Schaetzwert springt zwischen 0,53 und +-33 Grad
@@ -3370,7 +3407,7 @@ void HeadingBridge::update(float dtS, float wheelAngleDeg, float speedMps) {
         // ("the smoothed value must never lag a real turn"). Under the trees the raw
         // attitude carries single-frame artifacts of 2...20 deg while qf stays 4
         // (measured 2026-09-30 ... 10-02), so each of them larger than 3 deg reached
-        // AgOpenGPS as a jump - the operator's "SprÃƒÆ’Ã‚Â¼nge in den AOG-Daten". The snap is
+        // AgOpenGPS as a jump - the operator's "Spruenge in den AOG-Daten". The snap is
         // now allowed only while the RECEIVER itself reports a clean epoch
         // (Config::outQualityGateEnabled / uniHdgSdGoodDeg). On a degraded epoch the
         // same residual is instead rate-limited by kinematicRateBoundDegS() *
@@ -3876,8 +3913,8 @@ void FLASHMEM HeadingBridge::updateDirectionState(uint32_t now) {
     const float raw = fabsf(wrap180(psi - travel));   // 0 ... 180 deg
 
     // --- independent witness (operator correction 2026-09-29) ----------------
-    // "AOG zeigt RÃƒÆ’Ã‚Â¼ckwÃƒÆ’Ã‚Â¤rts, obwohl ich vorwÃƒÆ’Ã‚Â¤rts fuhr" and "die Richtung stimmt nur kurz
-    // nicht, wenn der Empfang zurÃƒÆ’Ã‚Â¼ckkommt". Measured in the 06:31 log: ONE bogus
+    // "AOG zeigt Rueckwaerts, obwohl ich vorwaerts fuhr" and "die Richtung stimmt nur kurz
+    // nicht, wenn der Empfang zurueckkommt". Measured in the 06:31 log: ONE bogus
     // evaluation at 0.47 m/s (0.25 m baseline, position noise) set REVERSE and kept it
     // for 50 s, because everything the decision is made from is then mirrored - the
     // system confirmed itself.
@@ -3945,9 +3982,20 @@ void FLASHMEM HeadingBridge::updateDirectionState(uint32_t now) {
         revVotes = 0;
         // Decide right away, otherwise the first frame of a reverse start would be
         // judged by the attitude gate with the (wrong) "forward" expectation.
-        status.reverseDirection = witnessForward ? false
-                                 : (witnessReverse ? true
-                                                   : (raw > config.reverseDetectDeg));
+        // B10.97 (2026-11-08, Feld-Log 11-08 Log 2): hier wurde aus EINER Auswertung
+        // entschieden, auch OHNE belastbaren Fahrtvektor. Bei stehender Maschine mit
+        // Positionsrauschen (0,12 m Schritte, kein Positions-Zeuge) kippte das die Richtung
+        // in 29 % der Frames auf REVERSE - und mit der falschen Hypothese akzeptiert das
+        // HPR-Gate einen um 180 Grad verdrehten Kurs, den AgOpenGPS dann als Rueckwaertsfahrt
+        // anzeigt. Neu: ohne Zeugen (Dual-Lage) und ohne soliden Fahrtvektor wird NICHTS
+        // entschieden, die bisherige Entscheidung bleibt - dieselbe Regel wie beim Umschalten
+        // weiter unten (dort: "reverse && travelWitnessValid && !travelSolid -> veto").
+        // Vorwaerts gewinnt immer, damit ein falsches REVERSE sich nicht festhalten kann.
+        bool revNew = wasReverse;
+        if (witnessForward)      revNew = false;
+        else if (witnessReverse) revNew = true;
+        else if (travelSolid)    revNew = (raw > config.reverseDetectDeg);
+        status.reverseDirection = revNew;
         if (reseed && status.reverseDirection != wasReverse) {
             // A standstill that changes the verdict is exactly what a K-turn needs, and it is
             // the one line that shows whether the re-seed did its job.

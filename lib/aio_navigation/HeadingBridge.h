@@ -617,6 +617,23 @@ bool     pathChordLagCorr = true;   // 0,5*omega*T gegen den Sehnen-Nachlauf
     float    artEstAntennaLeadM = 0.41f;   // Antennenmitte vor der Vorderachse
     float    artEstMaxDeg = 78.0f;         // Plausibilitaetsband (Maschine: 75)
     float    artEstTauS = 0.60f;           // Tiefpass (dt-korrekt), fuer ruhige Darstellung
+    // B10.97 (2026-11-08): gleitender Mittelwert ueber die letzten N Rohwerte, VOR dem Tiefpass.
+    // Betreiber-Befund am Replay: "der Lenkwinkel ist gut, aber etwas verrauscht". Ursache ist
+    // nicht der Tiefpass, sondern die Verstaerkung: 2 Grad Rauschen im Kurs-Lage-Vergleich
+    // werden bei gamma = 0 mit Faktor ~2,2 zu ~4,4 Grad gamma - und artEstMaxRateDegS = 100
+    // laesst den Tiefpass da voll durch. Das Fenster wird in Abtastschritten gezaehlt (100 Hz):
+    // 30 = 0,3 s. Nach dem Einschalten/Nachfuehren wird der Puffer geleert, damit kein alter
+    // Wert nachwirkt; der Mittelwert startet dann mit den vorhandenen Werten (nUse < N).
+    // 0 oder 1 = aus (dann wirkt nur der Tiefpass, wie vor 11-08).
+    uint8_t  artEstAvgN = 30;
+    // B10.97 (2026-11-08): eine Schaetzung, die nur wenige Abtastschritte lang existiert, ist
+    // KEINE Schaetzung. Im Feld-Log 11-08 (Log 2, Maschine steht) rollte sie kurz ueber 0,5 m/s,
+    // und jede dieser kurzen Phasen setzte sofort einen neuen Wert - der Filter wurde beim
+    // Wiedereinstieg geleert, also ging der VOLLE Rauschwert raus (in AOG bis 67 Grad Knick bei
+    // stehender Maschine). Erst ab dieser Anzahl zusammenhaengender gueltiger Schritte wird der
+    // Wert veroeffentlicht (50 = 0,5 s bei 100 Hz). Die laufende Schaetzung wird dabei
+    // weitergefuehrt, der Filter also NICHT mehr geleert. 0 = aus (altes Verhalten).
+    uint8_t  artEstMinRunTicks = 50;
     float    artEstMaxRateDegS = 100.0f;   // physikalische Aenderungsrate des Knickgelenks
     // 2026-11-06e: Ratenbegrenzung fuer den ANGEWANDTEN Knickwinkel (gamma/2 in der Ausgabe,
     // gamma in PGN 253). Gemessen am Ref-Log knick_125_241: gamma/2 toggelt zwischen 0,53 und
