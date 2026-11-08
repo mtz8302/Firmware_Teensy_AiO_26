@@ -114,6 +114,16 @@ die Schwellen nachziehen.
 * **gamma/2**: einfrieren -> 1 s Karenz -> Rampe; PGN 253 sendet den ANGEWANDTEN Knick.
 * **Defaults** auf Traktor-Werte + Offset 90 Grad (B10.85, mit dem dokumentierten Widerspruch
   zur Entscheidung vom 2026-11-02).
+* **Web-Texte ohne fahrzeugspezifische Beispielwerte** (Betreiber-Vorgabe 2026-11-07):
+  aus `VWASConfigPage.h` sind „Measured: 71,1 cm (15 Fahrten, 13 065 RTK-Frames)",
+  „Measured: 88,3 Grad … ein generisches 90 kostet 1,7 Grad", „gemessen am 01.11.: 37
+  eingetragen, echt 75" und die beiden Warnsatz-Zusaetze entfernt; ersetzt durch „measure it
+  on your machine". Geblieben sind die **Laufzeit-Anzeigen** („measured: …" in der
+  Live-Status-Box, „Self-measured") und generische Plausibilitaetsgrenzen („typical > 70 cm") —
+  die gelten fuer jede Maschine. Gleiche Aenderung in der aelteren Sim-Kopie der Seite.
+  **Hinweis**: `physicalBaselineDefaultM = 0.711 m` steht weiter als Build-Default im Code
+  (Begruendung B10.91: die geloeste Laenge dieser Maschine ist 0,83 m → +17 % → Default
+  drosselt). **Offene Entscheidung**: Default auf 0 („lernen") setzen?
 
 **Offen, priorisiert:**
 
