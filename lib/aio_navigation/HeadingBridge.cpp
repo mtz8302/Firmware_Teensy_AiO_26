@@ -4530,7 +4530,19 @@ void FLASHMEM HeadingBridge::updatePathChord(uint32_t now, float speedMps, float
         if (d.hasDualHeading && (gnssProcessor.getHprAgeMs() <= 300u)) {
             // B10.51: die Sehne ist jetzt Koerperrichtung, die Lage beim Knicklenker
             // Vorderrahmen -> dieselbe Bezugsgroesse herstellen (sonst 22 Grad Fehlurteil).
-            const float devAtt = fabsf(wrap180(chordBody - (d.dualHeading - hbArticulationHalfDeg(lastWheelAngleDeg))));
+            // B10.96 (2026-11-08, Sim-Replay des Feld-Logs 11-08): der Gelenkwinkel darf NUR
+            // eingehen, wenn er vertraut ist - dieselbe Regel wie beim angewandten Knick
+            // (siehe artEstApplyRateDegS weiter oben). Ohne diese Pruefung wurde auf einem
+            // Maeher OHNE Geber der offene Analogeingang (-91 Grad) halbiert und als -45,5 Grad
+            // abgezogen: der Vergleich "Sehne gegen Lage" war damit um 45 Grad verschoben und
+            // das Sprungtor sperrte die Sehne. Gemessen im Replay (gleiches Log, gleicher Code,
+            // nur vehicleType 0 -> 2): pc_dev p50 0,0 -> 37,2 Grad, pc_rej=8 195 -> 914,
+            // pc_ok 61,9 % -> 4,5 %. Mit dem Schutz bleibt pc_ok bei ~62 %, waehrend der
+            // Knick weiter nach AOG geht.
+            const float artHalf = wheelQualityOkState
+                                      ? hbArticulationHalfDeg(lastWheelAngleDeg)
+                                      : 0.0f;
+            const float devAtt = fabsf(wrap180(chordBody - (d.dualHeading - artHalf)));
             if (devAtt > devDeg) devDeg = devAtt;
             if (limitDeg > 45.0f) limitDeg = 45.0f;
         }
