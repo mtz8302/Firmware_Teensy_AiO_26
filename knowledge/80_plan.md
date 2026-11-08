@@ -170,6 +170,12 @@ die Schwellen nachziehen.
   `art_half` p50 0,31 -> 0,23). Tiefpass-Verdopplung getestet und verworfen (-18 %
   Rauschen fuer +0,6 s Verzoegerung). Kriterien unveraendert.
 
+* **Knickfilter-Untergrenze** (B10.98, Betreiber-Regel): der Knick wird aus dem ROHEN Dual-Heading
+  gerechnet - sein Filter wird jetzt auf mindestens `outMaMs` (300 ms) und `outSmoothMs`
+  (200 ms) angehoben. Gemessen ist er ohnehin 5x ruhiger als seine Quelle und 9x ruhiger
+  als der Ausgabekurs (p90 0,44 gegen 1,79 bzw. 2,60 Grad pro 100 ms); die Regel steht
+  damit im Code und nicht nur in den Vorgabewerten.
+
 **Offen, priorisiert:**
 
 1. **NAECHSTE FAHRT: die Geometrie muss ins GEPLAETTE EEPROM** (Feldtest 11-08, B10.95):
