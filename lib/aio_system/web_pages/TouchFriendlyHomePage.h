@@ -89,7 +89,7 @@ const char TOUCH_FRIENDLY_HOME_PAGE[] PROGMEM = R"rawliteral(
                          vorn -> Front schraeg -> unten horizontal zurueck zum Heck. -->
                     <circle cx="6.8" cy="17.6" r="3.2" fill="none" stroke="white" stroke-width="2"/>
                     <circle cx="17.4" cy="18.3" r="2.1" fill="none" stroke="white" stroke-width="1.8"/>
-                    <path d="M4.5,17 V5 H10 V10.5 H10.7 V5.6 H12.3 V10.5 H18.4 L20.3,13.2 V17 Z"/>
+                    <path d="M4.5,17 V5 H10 V10.5 H13.4 V5.6 H15.0 V10.5 H18.4 L20.3,13.2 V17 Z"/>
                 </svg>
                 Vehicle Settings
             </a></li>
