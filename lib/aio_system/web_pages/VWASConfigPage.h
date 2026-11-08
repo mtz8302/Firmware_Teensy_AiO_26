@@ -97,7 +97,7 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <div class="hint"><b>Articulated:</b> enter the FULL joint angle - AOG halves it itself.
-      Too small drops every tight turn (measured 01.11.: 37 entered, real 75).</div>
+      Too small drops every tight turn.</div>
     <div class="hint"><b>Antenna ahead of pivot:</b> positive forward. Pivot is the <b>rear axle</b>
       (tractor) or the <b>joint</b> (articulated). Use the value AOG's <b>main screen</b> draws
       correctly - its configuration drawing is misleading for articulated. 0 = no lead.</div>
@@ -127,12 +127,12 @@ const char VWAS_CONFIG_PAGE[] PROGMEM = R"rawliteral(
       </div>
     </div>
     <div class="hint"><b>Antenna spacing:</b> distance between the two antenna phase centres.
-      It is the <b>reference</b> that catches an untrustworthy heading solution.
-      <b>Measured: 71.1 cm</b> (15 drives, 13 065 RTK frames). <b>0 = test off</b>
-      (reference is learned - escape hatch only).</div>
+      It is the <b>reference</b> that catches an untrustworthy heading solution - measure it on
+      your machine (or take it from AgOpenGPS's vehicle setup) and enter the same value there.
+      <b>0 = test off</b> (reference is learned - escape hatch only).</div>
     <div class="hint"><b>Dual heading offset:</b> angle between antenna baseline and vehicle axis,
-      AOG's sign, <b>-100...+100</b>. <b>Measured: 88.3&deg;</b>. A generic 90 costs 1.7&deg; in
-      <b>every</b> frame. Enter the same value in AgOpenGPS.</div>
+      AOG's sign, <b>-100...+100</b>. Measure it on your machine: any error here offsets
+      <b>every</b> frame by that amount. Enter the same value in AgOpenGPS.</div>
     <button class="btn btn-primary" onclick="saveGeometry()">Save antenna geometry</button>
     <button class="btn btn-secondary" onclick="reloadAll()">Reload from device</button>
     <button class="btn btn-secondary" onclick="useMeasuredRef()">Use measured length as reference</button>
@@ -184,7 +184,7 @@ function plausibilityWarnings(keys) {
     const bs = numOrNaN('baselineMeters');
     if (isFinite(bs) && bs !== 0) {
       if (bs < 5) { w.push('Antenna spacing ' + bs + ' cm - that looks like METRES typed by mistake.'); }
-      else if (bs < 70) { w.push('Antenna spacing ' + bs + ' cm is short (typical > 70 cm, measured 71.1 cm).'); }
+      else if (bs < 70) { w.push('Antenna spacing ' + bs + ' cm is short (typical > 70 cm).'); }
       else if (bs > 200) { w.push('Antenna spacing ' + bs + ' cm is wide (typical < 200 cm).'); }
     }
   }
@@ -207,7 +207,7 @@ function plausibilityWarnings(keys) {
       if (Math.abs(ho) > 100) {
         w.push('Dual heading offset ' + ho + ' deg - AgOpenGPS only accepts -100...+100; enter the equivalent value there (270 equals -90).');
       } else if (!near90) {
-        w.push('Dual heading offset ' + ho + ' deg is not near +/-90 (measured 88.3).');
+        w.push('Dual heading offset ' + ho + ' deg is not near +/-90 - check the antenna mounting (athwart = 90).');
       }
     }
   }

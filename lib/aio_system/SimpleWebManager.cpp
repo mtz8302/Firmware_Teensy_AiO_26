@@ -2376,7 +2376,7 @@ void FLASHMEM SimpleWebManager::handleVWASStatus(EthernetClient& client) {
 //        fixed or learned, the reference actually applied, the length the receiver solved,
 //        the deviation between them, the mounting offset the firmware MEASURED itself, and
 //        whether the safety net has taken the baseline test out.
-// POST {"meters":0.711} and/or {"offsetDeg":88.3} -> set + persist.
+// POST {"meters":<antenna spacing in m>} and/or {"offsetDeg":<angle in deg>} -> set + persist.
 //        meters 0 means "switch the test off and learn again".
 void FLASHMEM SimpleWebManager::handleBridgeGeometry(EthernetClient& client, const String& method) {
     if (method == "POST") {
