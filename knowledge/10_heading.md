@@ -414,3 +414,26 @@ Winkel stehen, oder geht die Modellrate auf 0? Letzteres waere genau das L1-Prob
 **Noch offen (konkrete Zahlen, nicht Prinzip):** `ZO_Q_FITS_FULL`, `ZO_LOCK_FITS`,
 `rateLimitWheelFallbackDeg` und die Abbruchbedingung am Anfang von `updateZeroObserver()`
 (warum der Fit-Block so selten erreicht wird).
+### KORREKTUR + Nachtrag 2026-11-09: die Zahlen stehen im LOG (B11.24) - B11.23b war falsch
+
+Betreiber-Regel: **zuerst pruefen, ob die Zahl aus anderen Log-Werten konstruierbar ist.** Sie ist es:
+`zo_fit` (Spalte 106), `zo_st` (105), `rl_allowed` (82), `rl_clip` (83) tragen alle vier offenen
+Punkte direkt. Werkzeug: `_a1109_zahlen.ps1`.
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.24a | **B11.23b ist FALSCH: `zoFits` steht beim Fendt auf 255 (Maximum), nicht auf 1...3** | `zo_fit` p50 **255**, p90 255, max 255 (100 % des Zaehler-Maximums); `zo_st` = 3 in 5374 Frames (**HOLD**), 2 in 1316, 1 in 187. Der Nullpunkt-Beobachter **laeuft also voll** und hat abgeschlossen. Meine Herleitung \"wq=1 -> zoFits 1...3\" war ein Fehlschluss aus der Qualitaetsformel |
+| B11.24b | **`wq` ist trotzdem 0 - die STREUUNG druckt die Qualitaet auf 0, nicht die Anzahl** | `computeAngleQuality()` (`:1794-1809`): `q = 100 * zoFits/ZO_Q_FITS_FULL * (1 - zoFitDeviationDeg/ZO_Q_DEV_BAD_DEG)`. Bei `zoFits = 255` und `wq max 1` muss `zoFitDeviationDeg` nahe `ZO_Q_DEV_BAD_DEG` liegen, sonst waere `q` nicht ~0. **Beim Fendt ist der Nullpunkt also gelernt, gilt aber als zu unruhig** - plausibel mit dem Hydraulik-Schlupf, den der Betreiber nennt |
+| B11.24c | **Beim Knicklenker laeuft der Beobachter GAR NICHT** | `zo_fit` = **0** in allen 2730 Frames, `zo_st` = **0 (IDLE)** in allen 2730. Ohne Encoder gibt es keinen Fit - der Zweig kommt nie ueber den Anfang hinaus |
+| B11.24d | **Der erlaubte Deckel ist viel zu weit** | `rl_allowed` p50 **7,7** (Fendt) / **23,6** Grad/s (Knicklenker), p90 23,6 / 76,7. Rueckgerechnet auf den Lenkwinkel (L 2,50 m, ohne Margin/Raises): p50 **13,1 Grad** (Fendt) / **44,9 Grad** (Knicklenker). `rl_clip` greift in **30,3 %** (Fendt) bzw. **60,4 %** (Knicklenker) der Frames |
+
+**Damit verschiebt sich die Diagnose:**
+
+* **Fendt:** der VWAS-Nullpunkt IST gelernt (255 Fits, HOLD) - die Qualitaetszahl verweigert ihn
+  aber wegen der Streuung. Zu pruefen ist `zoFitDeviationDeg` / `ZO_Q_DEV_BAD_DEG` und der
+  Hydraulik-Schlupf, **nicht** die Fit-Anzahl.
+* **Knicklenker:** gar kein Beobachter (`IDLE`), also auch kein Nullpunkt. Der Deckel laesst
+  dort ~45 Grad Lenkwinkel zu, was bei Schleichfahrt einer Gierrate von 20...70 Grad/s entspricht.
+  Das erklaert, warum die Spitzen beim Knicklenker ungebremst durchgehen.
+* **Offen:** `rateLimitMarginDegS` und die \"raises\" (`rl_path`, Attitude-Rate) gehen in `rl_allowed`
+  mit ein - die Rueckrechnung oben ist deshalb eine OBERGRENZE fuer den Lenkwinkel.
