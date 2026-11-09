@@ -335,3 +335,23 @@ Zweig frei nachgezogen und passt beim Zurueckschalten nicht mehr zum begrenzten 
 |---|---|---|
 | B11.21 | **Ja, die Rueckkopplung existiert - und der Code benennt sie selbst** | Der VWAS rechnet den Lenkwinkel aus der **Heading-Rate**: `calculateGPSAngleFromHeadingRate(headingRate, speed)` (`WheelAngleFusion.cpp:813/979`). Die Heading-Rate kommt aus der Bridge (sie sitzt laut Kommentar `:37-44` **in** deren Heading-Pfad), und die Bridge rechnet ihre Modellrate mit dem **Lenkwinkel** (`hbModelRateDegS(angleDeg, vMps, wheelbaseM)`, `HeadingBridge.cpp:87`): VWAS -> Modellrate -> psi -> Heading -> VWAS-Beobachter -> VWAS. Kommentar `WheelAngleFusion.cpp:1512`: *"synthesises the heading the observer would be measuring a remainder of its own"* |
 | B11.21b | **Die Schutzmassnahme und ihre Luecke** | `usingDualHeadingNow = headingBridge.isAttitudeTrusted()` (`:488`): ist die Lage nicht vertraut, laeuft der Beobachter auf **COG** mit **hoeherer Geschwindigkeitsschwelle** (`:42`), und `zoQualityUsed` wird auf `fixQuality` statt `headingQuality` umgestellt (`:1484`). **Luecke:** bei Schleichfahrt (0,3...1 m/s) ist der COG selbst unbrauchbar (gemessen 11-09: Positionskurs ueber 1 s ist unter 2 m/s Muell) -> faellt die Lage weg UND ist das Tempo niedrig, hat der Beobachter **keine unabhaengige Referenz** und kann einen Rest seiner selbst lernen |
+### KORREKTUR 2026-11-09 zu B11.21 (Betreiber-Klarstellung, gleicher Tag)
+
+**B11.21/B11.21b waren falsch zugeordnet und sind hiermit richtiggestellt.** Der Aufruf
+`calculateGPSAngleFromHeadingRate(headingRate, speed)` steht in `WheelAngleFusion.cpp:809-816` in der
+**optionalen IMU-Yaw-Rate-Schiene** (`config.useIMUHeadingRate && imuProcessor`, gespeist aus
+`imuData.yawRate`) - **nicht** im Encoder-Pfad. Meine Behauptung, der VWAS rechne seinen Lenkwinkel
+aus der Heading-Rate der Bridge, ist damit **nicht belegt**.
+
+Die drei Quellen sind strikt zu trennen (Betreiber-Klarstellung 2026-11-09):
+
+| Quelle | Messprinzip | eigene Fehler | Rueckkopplung zum Heading-Modell |
+|---|---|---|---|
+| **Echter WAS** | Sensor direkt an der Achse / am Knickgelenk | Montage, Offset | **keine** (unabhaengige Messung) |
+| **VWAS (Keya, Encoder am Lenkrad)** | Lenkradwinkel ueber Encoder; **Schlupf der hydraulischen Lenkung** und die **Nullage (Geradeausfahrt) muessen gelernt und laufend nachkalibriert werden** | Schlupf, Nullpunkt-Drift, Radspiel | **keine ueber das Modell** - der Encoder ist vom Heading unabhaengig. Empfindlich ist nur die gelernte NULLAGE |
+| **Gerechneter Lenkwinkel (Knicklenker ohne Encoder)** | rein kinematisch aus dem Heading/Kurs | alles, was das Heading falsch macht | **JA, vollstaendig** - es gibt kein unabhaengiges Korrektiv gegen ein flaches Heading und den daraus abgeleiteten Lenkwinkel |
+
+**Offen (nicht behaupten, messen):** welcher Pfad bei fehlendem Encoder tatsaechlich greift und
+ob dort ein Schutz existiert. Der frueher zitierte Kommentar `WheelAngleFusion.cpp:1512`
+(*"synthesises the heading the observer would be measuring a remainder of its own"*) bleibt als
+Hinweis stehen, ist aber **noch nicht** dem konkreten Zweig zugeordnet.
