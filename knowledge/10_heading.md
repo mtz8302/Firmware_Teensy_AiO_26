@@ -396,3 +396,21 @@ es keine Nullpunkt-Fits), **beim Fendt mit Encoder aber nicht erklaerbar** und m
 **Offen:** was `wheelUse` im Fallback-Zweig ist (`HeadingBridge.cpp:1382`) - bleibt der Encoder-/Rechen-
 Winkel stehen, oder geht die Modellrate auf 0? Letzteres waere genau das L1-Problem vom 11-06
 (\"Modellrate ~0 beim Knicklenker, Ausgabe fror ein\").
+### Nachtrag 2026-11-09: was bei `wq = 0` tatsaechlich passiert (B11.23)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.23a | **Die Ratenbegrenzung arbeitet mit einer KONSTANTEN, nicht mit dem Lenkwinkel** | `HeadingBridge.cpp:1382-1384`: `wheelUse = wheelQualityOkState ? (abs(wheel - vwasTrim) + slack) : config.rateLimitWheelFallbackDeg`. Da `wheelQualityOkState` im Feld **immer false** ist (B11.22), gilt ausschliesslich `rateLimitWheelFallbackDeg` - ein fester Konfigurationswert. **Der Deckel ist damit blind fuer den tatsaechlichen Lenkwinkel** |
+| B11.23b | **Der Zaehler `zoFits` kommt nicht voran, er steht nicht still** | Fit-Block `WheelAngleFusion.cpp:1360-1372` laeuft nur, wenn `updateZeroObserver()` ihn erreicht; `zoFits++` steht in `:1372`. Aus `wq = 1` folgt `zoFits` in der Groessenordnung **1...3** (denn `computeAngleQuality` = `100*zoFits/ZO_Q_FITS_FULL*...` mit `ZO_Q_FITS_FULL` deutlich groesser). Der Beobachter **sammelt also, aber viel zu selten** - die Fit-Bedingung (geradeaus, genug Tempo, kein Lenken) wird im Feld kaum je erfuellt |
+
+**Damit ist die Kette vollstaendig und beide Baustellen sind an der Wurzel benannt:**
+
+1. **Heading-Spitzen:** entstehen beim Umschalten zwischen zwei Ausgabepfaden mit unterschiedlichen
+   Deckeln (`out_lim` 200 gegen 9,26, B11.20) - die Basis wird mitgerissen.
+2. **Lenkwinkel-Qualitaet:** `wq` bleibt bei 0, weil zu wenige Fits gesammelt werden (B11.22/B11.23b).
+   Folge: `wheelQualityOkState` dauerhaft false -> Modell-Gate aus, **Ratenbegrenzung mit Konstante**
+   (B11.23a), Bias im Fallback. Beim Knicklenker fehlt zusaetzlich die Encoder-Grundlage.
+
+**Noch offen (konkrete Zahlen, nicht Prinzip):** `ZO_Q_FITS_FULL`, `ZO_LOCK_FITS`,
+`rateLimitWheelFallbackDeg` und die Abbruchbedingung am Anfang von `updateZeroObserver()`
+(warum der Fit-Block so selten erreicht wird).
