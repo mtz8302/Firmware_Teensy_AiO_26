@@ -367,3 +367,15 @@ Hinweis stehen, ist aber **noch nicht** dem konkreten Zweig zugeordnet.
 Knicklenker ohne Encoder ist `wq` aber die EINZIGE Absicherung**, denn es gibt dort kein
 unabhaengiges Korrektiv. Ob `wq` in diesem Zweig ehrlich ist, ist **offen und zu messen**
 (`wq` gegen die Heading-Qualitaet `att_q`/`uni_hdgsd` auftragen, besonders bei v < 2 m/s).
+### Nachtrag 2026-11-09: WORAUS entsteht `wq` - nicht zirkulaer, aber indirekt (B11.21e)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.21e | **`wq` ist ein FIT-KONSISTENZ-Mass des Nullpunkt-Beobachters, keine Kruemmungsguete** | `WheelAngleFusion::computeAngleQuality()` (`:1794-1809`): `zoFits == 0 -> 0` (nie gelernt = unbrauchbar); `q = 100 * zoFits/ZO_Q_FITS_FULL`; `q *= (1 - zoFitDeviationDeg/ZO_Q_DEV_BAD_DEG)`; `q *= 0.5` wenn `!zoArmed` (die Fits stimmen noch nicht ueberein); `q *= 0.7` wenn `zoState != ZO_HOLD`; `q *= 0.8` wenn `ZO_BLOCKED`. Es geht also **nur** um Anzahl und Streuung der gelernten Nullpunkt-Fits - nicht um Heading, nicht um Kruemmung |
+| B11.21f | **Damit ist die Rueckkopplung NICHT zirkulaer - die Qualitaet faellt mit** | Die Fits entstehen aus dem Vergleich Heading-Aenderung gegen Lenkwinkel. Ist das Heading flach oder falsch, werden die Fits inkonsistent -> `zoFitDeviationDeg` steigt -> `wq` faellt -> `wheelQualityOkState` schliesst Modell-Gate (`:1617`), Ratenbegrenzung (`:1382`) und Bias-Schaetzung (`:1820`). Die Absicherung wirkt also **indirekt ueber die Streuung**, nicht ueber eine eigene Kruemmungsmessung |
+
+**Offen bleibt die DYNAMIK, nicht das Prinzip:** wie schnell `wq` faellt (`ZO_Q_FITS_FULL`,
+`ZO_Q_DEV_BAD_DEG`, Hysterese `wheelQualityLowPct/HighPct`) und ob das bei Schleichfahrt
+rechtzeitig genug ist. Im PP-Log steht `wq = 37` - je nach `wheelQualityLowPct` liegt das
+grenzwertig. **Zu messen:** `wq` gegen `att_q`, `uni_hdgsd` und `v` in den Knicklenker-Logs
+auftragen (Werkzeug `_a1109_wq.ps1`) - faellt `wq` VOR dem Heading oder erst danach?
