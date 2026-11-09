@@ -265,3 +265,22 @@ Werkzeuge: `_offset_and_turns.ps1` (Kurven), `_sim_trust.ps1` (Trust-ROC), `_dum
 
 Der Knick ist damit **5× ruhiger als seine eigene Quelle** und **9× ruhiger als der Ausgabekurs** — die Regel war also erfüllt, hing aber allein an den Vorgabewerten. **Jetzt steht sie im Code**: das Mittelwert-Fenster wird auf **mindestens `outMaMs`** angehoben (30 Ticks = 300 ms) und der Tiefpass auf **mindestens `outSmoothMs`**; wer `artEstAvgN`/`artEstTauS` kleiner setzt, bekommt sie angehoben statt einer zappelnden Maschine. Verhalten heute unverändert (Lauf `sim_b98_log1` zifferngleich zu `sim_run2_log1`: p50 0,140 / p90 1,010°, `art_half` p50 0,23°). | `HeadingBridge.cpp:3032…3075` (Untergrenzen), `HeadingBridge.h:618…640` (`artEstAvgN` = Mindestwert), Sim-Kopie gespiegelt |
 
+
+## Messung 2026-11-09 - acht Feld-Logs (3x Knicklenker, 5x Fendt), Bewertung der Ausgabekette
+
+Fahrzeugtrennung OHNE Dateinamen: `aog_tgt_deg` ist in ALLEN Frames 0 -> Knicklenker (kein Lenkmotor); sonst Ackermann (Fendt). `veh_type` 2 = Knicklenker, 0 = Fendt. Werkzeuge: die `_a1109_*.ps1` in `tools/analysis` (Spaltenpruefung, Unruhe, Heading nach Qualitaet getrennt, Roll/PWM-Kreuzkorrelation, Stanley/PP-Haelften, Ausreisser-Filter, Sim-Varianten-Runner).
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.1 | **Die Heading-Rate der AUSGABE ist 26...44x ueber Ziel** | `p99 abs(d az_out)/dt` = 26 / 30 / 39 / 44 Grad/s (Ziel <= 1), `p90` 6...17; Fendt-Logs, n = 3417...6877 |
+| B11.2 | **... auch bei vom Empfaenger als SAUBER gemeldeter Lage** | getrennt nach Qualitaet (PP-Log): `att_q=1` -> p90 9,0 / p99 31, **53 % der Frames > 1 Grad/s**; `uni_hdgsd<=1` -> 9,0 / 29, 55 %; `qf=4` -> 9,0 / 31. Ein reiner Qualitaetsgate-Ansatz kann das nicht fangen |
+| B11.3 | **Die Ursache ist die ROH-Lage, die live durchgereicht wird** | `src=att` 83,1 %, `state=LIVE` 84,2 %; rohe Lage `abs(d att)/dt` p90 12,3, p99 47,7, max 1.746 Grad/s |
+| B11.4 | **AOG verstaerkt das messbar (die Kette Heading -> Lenkung)** | `abs(d aog_tgt_deg)/dt`: bei ruhigem Heading (Median5 <= 0,25 Grad) p50 2,0 / p90 13 (n 3573), bei zittrigem (> 1,0 Grad) p50 6,0 / p90 24 -> **Faktor 3**; Lenkwinkel folgt mit `abs(d wheel)/dt` p90 7...15 |
+| B11.5 | **Stanley gegen PP im SELBEN Log** (`baeume bach bruecke autosteer`: erste Haelfte Stanley, ab gutem Empfang PP) | Stanley: Heading p90 15,0, AOG-Soll p90 20,0, VWAS-Rate p90 9,5 -> PP: 9,0 / 12,0 / 3,7. Verstaerkung (Soll/Heading) in BEIDEN 1,33 -> PP halbiert die **absolute** Lenkarbeit, weil das Heading ruhiger ankommt, nicht weil es anders verstaerkt |
+| B11.6 | **Median-5 auf der ROH-Lage ist der beste Hebel (und kostet keine Treue)** | Rate p90 15,3 -> 6,3 (-59 %), p99 61,4 -> 33,5, Frames > 1 Grad/s 81 % -> 42 %; **Treue unveraendert** (sd 3,01 -> 3,01, p95 1,95 -> 1,88, nur v > 2 m/s, n 1067). Gilt fuer BEIDE Fahrzeugtypen (die Dual-Antenne ist bei beiden dieselbe) |
+| B11.7 | **Glaettung auf der AUSGABE hilft nur halb** | Host-Sim, `SIM_OUT_MA_MS` 300 -> 600 -> 900: Rate p90 11 -> 10 -> 9, **p99 bleibt 29...31**; Treue unveraendert. Die Spitzen entstehen also NICHT im EMA/Boxcar |
+| B11.8 | **Hartes Begrenzen der Ausgabe ist die Falle** | Host-Sim, `SIM_FENCE_K=0.5`: Rate p90 11 -> 2,0, aber Treue sd 9,65 -> 14,78 und p95 8,6 -> **30,8 Grad** (glatt, aber falsch) |
+| B11.9 | **Verwerfen ohne Nachfuehrung friert ein** | erstes Tor-Experiment: gehaltener Wert -> 46 % Treffer (Kaskade, die Differenz zum alten Referenzwert waechst), Treue sd 20,9; mit Nachfuehrung 3 % Treffer - aber die erlaubte Rate selbst ist 20x ueber Ziel |
+| B11.10 | **Das Sprungtor ist bei Schleichfahrt zu weit** | `HeadingBridge.cpp:2974` `limRate = 30 + 25*v`: bei 0,5 m/s = 42,5 Grad/s = **4,3 Grad in EINEM Frame**; physikalisch sind bei 0,5 m/s hoechstens ~8 Grad/s moeglich. Die gemessenen 3...4-Grad-Spruenge passen glatt durch |
+
+**Nicht bestaetigt:** `out_lim = 0` in **93 %** der Frames (der Ratenbegrenzer greift praktisch nie); `outResidRateFactor` und die A10-Stufe zeigen im Replay **keinen** messbaren Effekt. Der Kommentar in `HeadingBridge.h:1710` (Output smoothing ... active only in poor phases) ist **veraltet**: `HeadingBridge.cpp:3318` sagt "The filter is therefore ALWAYS active".

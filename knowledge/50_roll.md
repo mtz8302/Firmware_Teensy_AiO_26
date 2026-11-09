@@ -63,3 +63,20 @@ im Text. Einstiege: `00_ueberblick.md` (2 Minuten) und `symptome.md` (je Betreib
 <!-- aus 9. Weitere Module - Einheiten, Fallen und "nicht nochmal" -->
 | B9.18 | **Im PANDA-Zweig gehoert KEIN Dual-Roll-Rueckfall hin** (waere toter Code): `selectMessageType()` liefert PAOGI, sobald `hasDualHeading` gilt, und PAOGI nimmt den Roll ohnehin aus `gnssData.dualRoll` -> der PANDA-Zweig laeuft nur OHNE Dual-Heading. **Der IMU-Ausfall der 09-21-Logs betrifft den Roll, der AOG erreicht, also NICHT** | `NAVProcessor.cpp:163` |
 
+
+## Messung 2026-11-09 - der Roll schwingt auch, wenn das Fahrzeug STEHT
+
+Acht Logs (3x Knicklenker, 5x Fendt). Betreiber: ausdruecklich OHNE Wellen im PWM des Autosteer nachgeprueft - siehe B11.13.
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.11 | **Der Roll schwingt IM STAND, also ist er kein Fahrwerkseffekt** | bei `v < 0,05 m/s` auf ebener Flaeche: `abs(roll_bridge)` max 3,8...7,0 Grad, sd 0,8...2,0 in 6 von 8 Logs (Fahrt bei v > 1 m/s: max 6,3...15,4, sd 1,1...5,0 - dieselbe Groessenordnung). Ein stehender Traktor kann nicht wanken -> die Welle ist ein **Artefakt der Dual-Loesung**, nicht die Strasse |
+| B11.12 | **Groesse in Metern / Betreiber-Bestaetigung** | Ausgabe-Spanne -6,5...+7,2 Grad = bis **47,7 cm** Positionsversatz bei 2 m Antenne; an der Stelle des Betreibers ("roll -4 bis +4") sind es `sin(4 Grad) * 2 m` = **14 cm** - seine 15 cm sind damit erklaert |
+| B11.13 | **Die Welle kommt NICHT von der Lenkung** (Betreiber-Hypothese widerlegt) | Roll-Streuung bei stehender Lenkung (`abs(pwm) < 3`) sd 2,14 Grad gegen 2,33 Grad bei aktiver (`abs(pwm) > 15`); Kreuzkorrelation Roll gegen `pwm` max r = 0,16 (Lag -0,8 s), gegen `aog_tgt` 0,32 ohne klaren Lag (alle Lags 0,21...0,32 = gemeinsamer Streckentrend). Periode der Welle p50 4,8 s (p10 1,2 s) |
+| B11.14 | **Der Roh-Roll ist unbrauchbar, die Ausgabe ist nur gedeckelt** | roh -66,1...+50,8 Grad; ausgegeben max **1,000 Grad/Frame** (harter Deckel, 10 Hz = 10 Grad/s), Deckel greift in **5...10 %** der Fahreframes -> der interne Roll will staendig schneller als er darf. `roll_src` 1 (dual) 82 %, 4 (gehalten) 18 % |
+
+**Folge fuer die Ausgabe:** AOG rechnet `sin(roll) * Antennenhoehe` als Querversatz. Ein
+Roll-Artefakt von +-4 Grad bei 2 m ist ein **14-cm-Positionszittern**, das AOG als Querfehler
+sieht - unabhaengig von der Heading-Kette. Der Roll ist damit nach dem Heading der **zweite**
+Eintrag in die unruhige Lenkung (in der Ursachenzuordnung der 11-09-Logs fielen 0...26 % der
+Lenk-Zappel-Frames mit einem Roll-Sprung zusammen, 43...95 % mit einem Heading-Sprung).
