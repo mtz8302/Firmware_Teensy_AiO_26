@@ -308,3 +308,14 @@ entscheiden, nicht in der Rohdaten-Simulation.**
 **Naechster Schritt ist eine Messung, keine Aenderung:** die p99-Spitzen gegen `src`/`state`-Wechsel
 und `hdg_res`/`dir_veto` korrelieren (Werkzeug dafuer gibt es noch nicht). Erst wenn feststeht,
 welcher Pfad die Spitzen erzeugt, ist ein Eingriff begruendbar.
+### Nachtrag 2026-11-09: WELCHER PFAD erzeugt die Spitzen (B11.19)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.19 | **Die Spitzen fallen mit dem Umschalten des AUSGABEPFADS zusammen, nicht mit einem Zustandswechsel** | `_a1109_spitzen.ps1`, PP-Log: 147 Spitzen > 10 Grad/s (p50 18, p90 33, max 110). Geprueft wird das Fenster -3...+2 Frames, jede Zahl gegen die **Basisrate** (alle Fahreframes, n 6459): `out_snap`-Wechsel **56 % gegen 7,5 % Basis = 7,5x**, rohe Lage gesprungen 53 %, `dir_veto`-Anstieg 55 % **gegen 31 % Basis = nur 1,8x** (Mitlaeufer), `att_q`-Wechsel 32 %, `src`-Wechsel 14 %, `state`-Wechsel 9 %, `hdg_res` **0 %**, `rev`-Wechsel **0 %** (die Rueckwaertsfahne flattert NICHT), **NICHTS davon 13 %** |
+| B11.19b | **`out_snap` ist damit die Stellschraube** | `out_snap` sagt, welchen Weg die Ausgangsglaettung nahm: 0 = Residual ratenbegrenzt (kein Sprung erreicht AOG), 1 = durchgeschlagen (saubere Epoche, ohne Verzoegerung), 2 = kein Residual. 56 % der Spitzen entstehen beim WECHSEL zwischen diesen Wegen - der Sprung kommt aus dem Umschalten, nicht aus der Rohmessung. Das passt zu `out_lim = 0` in 93 % der Frames: der Begrenzer ist nicht aktiv, waehrend umgeschaltet wird |
+
+**Damit ist die Arbeitsrichtung klar:** nicht die Rohlage filtern (im Replay wirkungslos, B11.18),
+sondern die **Umschaltbedingung** von `out_snap` untersuchen (`status.outSnapSrc`,
+`outSmoothing`, `outQualityGateEnabled` in `HeadingBridge.cpp`). Die 13 % ohne jeden
+Begleitumstand bleiben als zweiter Pfad offen (Ring/Projektion/Vorhalt).
