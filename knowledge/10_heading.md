@@ -379,3 +379,20 @@ unabhaengiges Korrektiv. Ob `wq` in diesem Zweig ehrlich ist, ist **offen und zu
 rechtzeitig genug ist. Im PP-Log steht `wq = 37` - je nach `wheelQualityLowPct` liegt das
 grenzwertig. **Zu messen:** `wq` gegen `att_q`, `uni_hdgsd` und `v` in den Knicklenker-Logs
 auftragen (Werkzeug `_a1109_wq.ps1`) - faellt `wq` VOR dem Heading oder erst danach?
+### Nachtrag 2026-11-09: `wq` ist im FELD praktisch IMMER 0 - der Waechter ist dauerhaft zu (B11.22)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.22 | **`wq` steht in allen acht Feld-Logs bei 0 (Maximum 1)** | `_a1109_wq.ps1` bzw. Direktzaehlung, Spalte 54: Fendt (5 Logs, Keya-Encoder, `abs(enc)` p50 1,89...4,05 Grad) -> `wq` p50 0, max **1**, Anteil > 0 nur **0,5...1,2 %**; Knicklenker (3 Logs, `abs(enc)` = **0,00**) -> `wq` **exakt 0**, Anteil > 0 **0 %** |
+| B11.22b | **Damit ist `wheelQualityOkState` bei BEIDEN Fahrzeugtypen praktisch immer false** | `computeAngleQuality()` gibt 0 zurueck, solange `zoFits == 0` (`WheelAngleFusion.cpp:1795`); ein Wert von 1 bedeutet `100 * zoFits/ZO_Q_FITS_FULL * ... = 0,01` - der Nullpunkt-Beobachter sammelt also **fast keine Fits**. Folge: Modell-Gate (`HeadingBridge.cpp:1617`) aus, Bias-Schaetzung im Fallback (`:1820`), `wheelUse` (`:1382`) im Fallback-Zweig |
+
+**Konsequenz fuer die Betreiber-Frage:** Die Rueckkopplung ist beim Knicklenker **nicht** ueber das
+Modell-Gate aktiv (das Gate ist dauerhaft zu) - die Sorge war berechtigt, greift aber hier nicht.
+**Der eigentliche Defekt ist ein anderer:** die Qualitaetszahl, die den Lenkwinkel absichern soll,
+ist bei beiden Fahrzeugtypen funktionslos. Beim Knicklenker ist das folgerichtig (ohne Encoder gibt
+es keine Nullpunkt-Fits), **beim Fendt mit Encoder aber nicht erklaerbar** und muss untersucht werden
+(`zoFits` / `ZO_Q_FITS_FULL` / warum der Beobachter nicht sammelt).
+
+**Offen:** was `wheelUse` im Fallback-Zweig ist (`HeadingBridge.cpp:1382`) - bleibt der Encoder-/Rechen-
+Winkel stehen, oder geht die Modellrate auf 0? Letzteres waere genau das L1-Problem vom 11-06
+(\"Modellrate ~0 beim Knicklenker, Ausgabe fror ein\").
