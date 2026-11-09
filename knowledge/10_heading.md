@@ -293,3 +293,18 @@ Fahrzeugtrennung OHNE Dateinamen: `aog_tgt_deg` ist in ALLEN Frames 0 -> Knickle
 
 **Werkzeug:** `_a1109_latenz.ps1` (Kurven-Nachlauf je Fensterbreite, getrennt nach Gerade /
 leichte Kurve / enge Kurve).
+### Nachtrag 2026-11-09: das Replay widerlegt die Rohdaten-Vorhersage (B11.18)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.18 | **Kein Gewinn im Gesamtsystem - die p99-Spitzen entstehen IN der Bridge, nicht in der Rohmessung** | Host-Sim (3000 Frames, PP-Log, Sim-Baseline als Bezug): `SIM_HDG_MED=5` (Median auf der Roh-Lage VOR allen Gates) senkt die Rate p90 nur **11,0 -> 10,0**, die **p99 bleibt 29,0** (max 86 -> 63); `SIM_ROLL_GATE=1` (Roll-Gate auf `uniLengthM`) aendert **gar nichts** (Roll -7,7...5,7 in allen Varianten). Die Rohdaten-Rechnung (`_a1109_aussen.ps1`) hatte fuer denselben Filter **-59 %** bei der Rate p90 vorhergesagt |
+
+**Lehre:** Eine Filterstudie auf den ROHDATEN schaetzt den Systemgewinn systematisch zu
+optimistisch - die Ausgabe laeuft durch Ring, Projektion, psi und den Vorhalt, und ein Median auf
+der Roh-Lage kann einen Sprung, der in der Ausgabelogik entsteht (Umschaltung, Re-Seed,
+Umbasierung), nicht entfernen. **Konsequenz fuer die Arbeitsweise: Filterfragen nur im Replay
+entscheiden, nicht in der Rohdaten-Simulation.**
+
+**Naechster Schritt ist eine Messung, keine Aenderung:** die p99-Spitzen gegen `src`/`state`-Wechsel
+und `hdg_res`/`dir_veto` korrelieren (Werkzeug dafuer gibt es noch nicht). Erst wenn feststeht,
+welcher Pfad die Spitzen erzeugt, ist ein Eingriff begruendbar.
