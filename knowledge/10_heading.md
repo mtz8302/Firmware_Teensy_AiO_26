@@ -355,3 +355,15 @@ Die drei Quellen sind strikt zu trennen (Betreiber-Klarstellung 2026-11-09):
 ob dort ein Schutz existiert. Der frueher zitierte Kommentar `WheelAngleFusion.cpp:1512`
 (*"synthesises the heading the observer would be measuring a remainder of its own"*) bleibt als
 Hinweis stehen, ist aber **noch nicht** dem konkreten Zweig zugeordnet.
+### Nachtrag 2026-11-09: der Zirkelbezug ist im Code adressiert - die Lenkwinkel-QUALITAET ist der Waechter (B11.21c)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.21c | **Der gerechnete Lenkwinkel kommt aus dem EMPFAENGER-Heading, nicht aus der Ausgabe - und der Code sagt das ausdruecklich** | Knicklenker-Zweig (`WheelAngleFusion.cpp:759-776`): `curvature = headingDelta / distance`, `gamma = 2*asin(kappa*L/2)`. Kommentar `:752-758`: **"Richtig ist die Umkehrung der Gelenk-Kinematik, und die braucht KEINEN Gelenksensor - nur die Kruemmung ... Kein Zirkelbezug: geschaetzt wird aus dem EMPFAENGER-Heading, nicht aus az_out."** Der Ackermann-Zweig daneben (`:784-788`) rechnet `delta = atan(kappa*L)` genauso |
+| B11.21d | **Ja - der Lenkwinkel speist die Modellrate, und die Qualitaetszahl `wq` steuert, ob er das darf** | Modellrate: `hbModelRateDegS(wheelUse, vAbs, ...)` (`HeadingBridge.cpp:1388`) und `hbModelRateDegS(deltaEff, vModel, Lmodel)` (`:2662`). Waechter: `wheelQualityOkState` mit Hysterese `wheelQualityLowPct` / `wheelQualityHighPct` (`:2393-2405`), wirksam in **Modell-Gate** (`:1617`), **Ratenbegrenzung** (`:1382/1388`) und **Bias-Schaetzung** (`:1820`); die Log-Spalte ist `wq` (Spalte 56) |
+
+**Damit ist die Betreiber-Frage beantwortet:** die Rueckkopplung ist konstruktiv **unterbrochen, solange
+`wq` die Wahrheit sagt** - sie geht ueber den Empfaenger, nicht ueber die eigene Ausgabe. **Beim
+Knicklenker ohne Encoder ist `wq` aber die EINZIGE Absicherung**, denn es gibt dort kein
+unabhaengiges Korrektiv. Ob `wq` in diesem Zweig ehrlich ist, ist **offen und zu messen**
+(`wq` gegen die Heading-Qualitaet `att_q`/`uni_hdgsd` auftragen, besonders bei v < 2 m/s).
