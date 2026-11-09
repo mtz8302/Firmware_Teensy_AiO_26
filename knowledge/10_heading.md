@@ -319,3 +319,19 @@ welcher Pfad die Spitzen erzeugt, ist ein Eingriff begruendbar.
 sondern die **Umschaltbedingung** von `out_snap` untersuchen (`status.outSnapSrc`,
 `outSmoothing`, `outQualityGateEnabled` in `HeadingBridge.cpp`). Die 13 % ohne jeden
 Begleitumstand bleiben als zweiter Pfad offen (Ring/Projektion/Vorhalt).
+### Nachtrag 2026-11-09: der Umschaltmechanismus im Klartext (B11.20)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.20 | **Der Ausgabepfad schaltet zwischen "Deckel offen" und "Deckel greift" - und reisst dabei den Wert mit** | `_a1109_umschalt.ps1`, PP-Log: 482 `out_snap`-Wechsel, Rate an diesen Frames p90 **15** Grad/s gegen 9 im Gesamtlog, max 104. Uebergaenge: `2->0` 153, `0->2` 141, `1->2` 84, `2->1` 72, `0->0` 80. Im Wechsel-Fenster steht `out_lim = 200,00` bei `sn=1` (Deckel praktisch offen) und `out_lim = 9,26` bei `sn=0` (Deckel greift); der Residual kippt dabei von **+12,37 auf -9,26** und die Basis `out_sm` wird auf 235,0 nachgezogen. Beim Zurueckschalten springt die Ausgabe **10,4 Grad zurueck** (225,5 -> 235,0 -> 224,6) |
+
+**Das ist die Ursache der Spitzen (B11.19):** nicht die Rohlage, sondern der Wechsel zwischen
+zwei Ausgabepfaden, die unterschiedliche Deckel benutzen. Die Basis (`out_sm`) wird im offenen
+Zweig frei nachgezogen und passt beim Zurueckschalten nicht mehr zum begrenzten Residual.
+
+### Nachtrag 2026-11-09: Rueckkopplung VWAS <-> Modell (Betreiber-Frage, B11.21)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.21 | **Ja, die Rueckkopplung existiert - und der Code benennt sie selbst** | Der VWAS rechnet den Lenkwinkel aus der **Heading-Rate**: `calculateGPSAngleFromHeadingRate(headingRate, speed)` (`WheelAngleFusion.cpp:813/979`). Die Heading-Rate kommt aus der Bridge (sie sitzt laut Kommentar `:37-44` **in** deren Heading-Pfad), und die Bridge rechnet ihre Modellrate mit dem **Lenkwinkel** (`hbModelRateDegS(angleDeg, vMps, wheelbaseM)`, `HeadingBridge.cpp:87`): VWAS -> Modellrate -> psi -> Heading -> VWAS-Beobachter -> VWAS. Kommentar `WheelAngleFusion.cpp:1512`: *"synthesises the heading the observer would be measuring a remainder of its own"* |
+| B11.21b | **Die Schutzmassnahme und ihre Luecke** | `usingDualHeadingNow = headingBridge.isAttitudeTrusted()` (`:488`): ist die Lage nicht vertraut, laeuft der Beobachter auf **COG** mit **hoeherer Geschwindigkeitsschwelle** (`:42`), und `zoQualityUsed` wird auf `fixQuality` statt `headingQuality` umgestellt (`:1484`). **Luecke:** bei Schleichfahrt (0,3...1 m/s) ist der COG selbst unbrauchbar (gemessen 11-09: Positionskurs ueber 1 s ist unter 2 m/s Muell) -> faellt die Lage weg UND ist das Tempo niedrig, hat der Beobachter **keine unabhaengige Referenz** und kann einen Rest seiner selbst lernen |
