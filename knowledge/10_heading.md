@@ -284,3 +284,12 @@ Fahrzeugtrennung OHNE Dateinamen: `aog_tgt_deg` ist in ALLEN Frames 0 -> Knickle
 | B11.10 | **Das Sprungtor ist bei Schleichfahrt zu weit** | `HeadingBridge.cpp:2974` `limRate = 30 + 25*v`: bei 0,5 m/s = 42,5 Grad/s = **4,3 Grad in EINEM Frame**; physikalisch sind bei 0,5 m/s hoechstens ~8 Grad/s moeglich. Die gemessenen 3...4-Grad-Spruenge passen glatt durch |
 
 **Nicht bestaetigt:** `out_lim = 0` in **93 %** der Frames (der Ratenbegrenzer greift praktisch nie); `outResidRateFactor` und die A10-Stufe zeigen im Replay **keinen** messbaren Effekt. Der Kommentar in `HeadingBridge.h:1710` (Output smoothing ... active only in poor phases) ist **veraltet**: `HeadingBridge.cpp:3318` sagt "The filter is therefore ALWAYS active".
+### Nachtrag 2026-11-09: Fensterwahl, Reaktivitaet und der Sim-Build (B11.16/B11.17)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.16 | **Median-5 kostet fast keine Reaktivitaet** | kausales Median-Fenster gegen den Positionskurs (v > 1 m/s, PP-Log): Nachlauf p50 **34 ms**; Fehler p90 auf der Geraden 0,63 Grad, in leichter Kurve 0,99, in enger Kurve 0,86. med3: 46 ms / 0,89 / 1,48 / 3,23; med7: 71 ms / 0,86 / 1,51 / 3,35. Ziel "< 5 Grad Verlust bei einer 90-Grad-Kurve" wird von allen dreien deutlich eingehalten - **med5 ist der beste Kompromiss** (ein Median verzoegert eine Rampe nicht, er entfernt nur Ausreisser) |
+| B11.17 | **Der Sim-Build braucht w64devkit** | `C:\Treiber und Software\w64devkit\bin\g++.EXE` (GCC 16.2.0) muss im PATH liegen; `pio run -e sim` = 10 s, Replay 3000 Frames = 3 s (~100x Echtzeit, nicht 16x). Ein `toolchain-gccmingw32` gibt es im PlatformIO-Index **nicht mehr**. **Sim-Baseline weicht vom Feldlog ab** (Rate p50 3,0 gegen 1,0) -> Varianten nur RELATIV gegen die Sim-Baseline vergleichen |
+
+**Werkzeug:** `_a1109_latenz.ps1` (Kurven-Nachlauf je Fensterbreite, getrennt nach Gerade /
+leichte Kurve / enge Kurve).

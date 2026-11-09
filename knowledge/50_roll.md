@@ -80,3 +80,16 @@ Roll-Artefakt von +-4 Grad bei 2 m ist ein **14-cm-Positionszittern**, das AOG a
 sieht - unabhaengig von der Heading-Kette. Der Roll ist damit nach dem Heading der **zweite**
 Eintrag in die unruhige Lenkung (in der Ursachenzuordnung der 11-09-Logs fielen 0...26 % der
 Lenk-Zappel-Frames mit einem Roll-Sprung zusammen, 43...95 % mit einem Heading-Sprung).
+### Nachtrag 2026-11-09: die URSACHE des Roll-Zitterns (B11.15)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.15a | **Der Roll kommt aus dem Baseline-PITCH** der quer montierten Dual-Antenne | `GNSSProcessor.cpp:1914-1922` (Kommentar: "THIS IS THE VEHICLE ROLL ... Do not fix this to read field 5") |
+| B11.15b | **Die Roll-Messung bricht bei LANGSAMER FAHRT zusammen** | dual-Roll-Streuung nach Tempo (PP-Log): Stand 1,83 Grad, 0,05...0,5 m/s **10,33**, 0,5...1 m/s 7,46, 1...2 m/s **12,23**, ueber 2 m/s **1,64**. Parallel `uni_ptchsd` p90 = 26,8 / 214,9 / 3,76 / 1,26 Grad - der Empfaenger SAGT es also selbst |
+| B11.15c | **Die Baseline-Laenge ist der Zeuge** | `uni_len` springt 0,25 ... 8,26 m (p50 2,76) statt konstant zu sein; `baseline_dev_pct` ist im Log **leer** (NaN, n = 0) - die Spalte traegt nichts mehr |
+| B11.15d | **... und die vorhandene Qualitaetspruefung steuert nur den HALTEWERT, nicht die Ausgabe** | `HeadingBridge.cpp:1883-1896`: `rollQualOk` aus `uniPtchStdDevDeg <= 3,0` (Hysterese 6,0) und `baselineDevPct <= 5 %`. Kommentar `:1902`: **"die AUSGABE bleibt live, nur der Haltewert wird gereinigt"**. Ein Frame mit 215 Grad Pitch-sigma laeuft damit live durch den LPF |
+| B11.15e | **Keine IMU als Ersatz im Fahrzeug** | `imu_roll` ist im ganzen Log **exakt konstant** (sd 0,00 im Stand UND in Fahrt) -> kein IMU-Roll vorhanden, B8.42/B8.110 greifen hier nicht |
+
+**Konsequenz (noch NICHT gebaut):** die Roll-Qualitaet (`uniPtchStdDevDeg`, `uni_len`) muss die
+AUSGABE steuern - bei schlechter Epoche halten bzw. die Rampen-Rueckkehr nutzen -, nicht nur den
+Haltewert. Das ist eine Aenderung an der Ursache; "im Stand halten" waere nur ein Symptom.
