@@ -468,3 +468,19 @@ betroffen) und braucht dort nur eine andere Quelle fuer `wheelUse` - den VWAS-Le
 Nullpunkt beim Fendt nachweislich gelernt ist (B11.24a: 255 Fits, HOLD). **Beim Knicklenker ist V3
 in dieser Form nicht anwendbar**; dort ist die Frage zuerst, woher ein brauchbarer Lenkwinkel
 kommen soll. Das ist eine Zweig-Entscheidung, keine globale Aenderung.
+
+### Nachtrag 2026-11-09: das Kriterium ist der LENKWINKEL, nicht der Fahrzeugtyp (B11.27)
+
+Betreiber-Einwand (berechtigt): ein Ackermann kann ebenfalls OHNE WAS fahren, ein Knicklenker kann
+einen Keya mit Encoder haben. Die Zweig-Entscheidung darf deshalb nicht an `veh_type` haengen.
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.27a | **Das harte Kriterium ist der Encoder, nicht der Fahrzeugtyp** | Alle acht Logs: `enc_cnt`-Wechsel **2740...5383** und `abs(enc)` p50 1,89...4,05 Grad bei den fuenf Ackermann-Logs; `enc_cnt`-Wechsel **0** und `abs(enc)` **0,00** bei den drei Knicklenker-Logs. In DIESEN Logs korreliert das zufaellig mit `veh_type`, die Ursache ist aber der Encoder |
+| B11.27b | **`wheel_deg` ist beim Knicklenker EINGEFROREN bei -91,0 Grad** | p05 -91,2 / p50 -91,0 / p95 -90,9 -> **Streuung 0,27...0,32 Grad ueber die ganze Fahrt**, auch im Rangieren auf dem Hof. Ein echter Lenkwinkel muesste dort stark schwanken |
+| B11.27c | **Der Wert traegt den MONTAGE-OFFSET, nicht den Lenkwinkel** | `mount_deg` p50 -87,80 / -88,10 / **-91,60** in den drei Knicklenker-Logs; `wheel_deg - 88,2 = -179,2`. Der eingefrorene Wert liegt also beim Antennen-Offset (-88...-92 Grad) -> **Bezugsfehler-Verdacht** (Heading im AOG-Frame statt im BODY-Frame differenziert) |
+| B11.27d | **Konsequenz fuer V3** | Die Bedingung muss `wheelAngleAvailable` heissen: Encoder aktiv (`enc_cnt` wechselt) **und** `abs(wheel)` plausibel (< `maxSteeringAngle`) **und** `zo_fit > 0`. Erst dann den VWAS-Lenkwinkel benutzen, sonst einen aus `v` physikalisch begruendeten Fallback. **Gilt fuer beide Fahrzeugtypen gleich** |
+
+**Damit ist V3 praeziser als vorher:** nicht "veh_type == 0", sondern "brauchbarer Lenkwinkel liegt vor".
+Der eingefrorene -91-Grad-Wert ist zugleich ein eigener Fehlerbefund: der gerechnete Lenkwinkel
+des Knicklenkers ist nicht nur unkalibriert, er ist **konstant** und traegt den Montage-Offset.
