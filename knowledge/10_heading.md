@@ -505,3 +505,23 @@ aus dem FALSCHEN Index gelesen (Spalte 21 ist `proj_r_deg`, nicht `mount_deg`). 
 dort der BRAUCHBARE Wert steht (und nicht der eingefrorene Offset), darf V3 nicht darauf aufsetzen.
 Die Bedingung `wheelAngleAvailable` (B11.27d) muss deshalb zuerst PRUEFEN, ob der Wert variiert -
 ein konstantes `wheel_deg` ist der Ausschluss, egal wie plausibel der Zahlenbereich aussieht.
+
+### KORREKTUR 2 + URSACHE 2026-11-09: der Lenkwinkel des Knicklenkers ist ein FLOATENDER ADC-PIN (B11.29)
+
+**Korrektur zu B11.28:** Die dortige "Korrektur" von B11.27c war selbst falsch. Die 2026-11-09-Logs haben
+**127 Felder** und eine andere Spaltenreihenfolge als `HR_HDR.current` (128): `qf` und `fixQ` sind vertauscht,
+`wheel_deg` liegt bei **Index 10** und `mount_deg` bei **Index 21**. Empirisch geprueft am Knicklenker-Log:
+idx 7 = fixQ (4), idx 8 = sats (13...21), idx 9 = qf (2), **idx 10 = wheel_deg (-91,02 / Spanne 0,27)**,
+idx 11 = psi_deg (0...360), **idx 21 = mount_deg (-91,60)**. **B11.27b/c gelten also unveraendert.**
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.29a | **Es ist EIN Wert fuer alle Verbraucher** | `AutosteerProcessor.h:33`: "THE wheel angle of this firmware. Selected ONCE per cycle in selectSteerAngle() and used by every consumer: the PGN 253 towards AgOpenGPS (via actualAngle), the steering control, the HeadingMonitor record and the HeadingBridge model". Kette: `selectSteerAngle()` -> `currentAngle` -> `steerAngleDeg` (`AutosteerProcessor.cpp:401`) -> `headingBridge.update(0.01f, steerAngleDeg)` (`:460`) -> `lastWheelAngleDeg` (`HeadingBridge.cpp:2334`) und `logRawFrame(..., wheelAngleDeg)` = **HR-Spalte `wheel_deg`** |
+| B11.29b | **URSACHE: beim Knicklenker liefert der ANALOGE WAS-Eingang den Wert - und der Pin ist nicht verdrahtet** | Ohne Encoder ist `wheelAngleFusion.isHealthy()` false, ohne Keya/Valve greift `AutosteerProcessor.cpp:1541/1554`: `selectedAngle = adProcessor.getWASAngle(); wheelQuality = getINSUseFusion() ? 0.0f : 100.0f;`. Der ADC-Pin ist mit INPUT_DISABLE belegt (Kommentar `:1598-1600`: "there is no physical WAS, the ADC pin is left floating") -> **der konstante -91 Grad ist ein floatendes ADC-Artefakt, kein Lenkwinkel** |
+| B11.29c | **Die Qualitaet sagt es richtig, aber niemand handelt danach** | `wheelQuality = 0` ist korrekt (die Bridge gated damit, deshalb `wq = 0` und der 15-Grad-Fallback greift). Aber der WERT wird nicht ersetzt: er geht unveraendert an PGN 253 nach AgOpenGPS, an den HeadingMonitor und in das Log. **Ein als unbrauchbar erkannter Wert sollte als 0 gesendet werden, nicht als -91** |
+| B11.29d | **-91 Grad (Log) und -92,13 Grad (Web "measured") sind ZWEI VERSCHIEDENE Dinge** | `wheel_deg` = der floatende ADC-Wert; `dual heading offset measured` = der gemessene **Antennen-Montage-Offset** (B11.28a: 88 eingegeben = -92,13 + 180). Dass beide um -91 liegen, ist **kein Zusammenhang**, sondern die Naehe zur Querlage (90 Grad) |
+
+**Konsequenz fuer V3:** Die Bedingung `wheelAngleAvailable` (B11.27d) wird jetzt exakt messbar:
+`wheelQuality > 0` UND `enc_cnt`-Wechsel UND `|wheel|` variiert. Der Knicklenker-Fall faellt durch alle drei.
+**Der eigentliche Fehler ist aber nicht V3, sondern B11.29c**: ein mit `wheelQuality = 0` markierter Wert
+sollte nicht als -91 Grad weitergegeben werden.
