@@ -484,3 +484,24 @@ einen Keya mit Encoder haben. Die Zweig-Entscheidung darf deshalb nicht an `veh_
 **Damit ist V3 praeziser als vorher:** nicht "veh_type == 0", sondern "brauchbarer Lenkwinkel liegt vor".
 Der eingefrorene -91-Grad-Wert ist zugleich ein eigener Fehlerbefund: der gerechnete Lenkwinkel
 des Knicklenkers ist nicht nur unkalibriert, er ist **konstant** und traegt den Montage-Offset.
+
+### KORREKTUR + Nachtrag 2026-11-09: der Offset ist gespiegelt, und zwei Lenkwinkel-Pfade (B11.28)
+
+**Korrektur zu B11.27c:** die dort genannten `mount_deg`-Werte (-87,80 / -88,10 / **-91,60**) wurden
+aus dem FALSCHEN Index gelesen (Spalte 21 ist `proj_r_deg`, nicht `mount_deg`). Richtig:
+
+| Log | `mount_deg` (Spalte 21 = Index 19) | `wheel_deg` - `mount_deg` |
+|---|---|---|
+| Knicklenker 0 Hof | **-0,02** (Spanne 0,39) | **-90,98** |
+| Bruecke...PP (Fendt) | **0,00** (Spanne 0,08) | **-0,56** |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.28a | **Eingegebener und gemessener Offset sind um 180 Grad gespiegelt, nicht um 2 Grad verschieden** | Betreiber: eingegeben **88 Grad**, gemessen **-92,13 Grad**. `88 - (-92,13) = 180,13` Grad; `-92,13 + 180 = 87,87` -> der eingegebene Wert trifft den gespiegelten gemessenen auf **0,13 Grad**. Die "2 Grad" sind der Abstand zur Querlage: `90 - 88 = 2,00` und `92,13 - 90 = 2,13` |
+| B11.28b | **`wheel_deg` beim Knicklenker traegt den Offset, beim Fendt nicht** | `wheel_deg - mount_deg`: Knicklenker **-90,98** (also praktisch der gemessene Offset, B11.27b), Fendt **-0,56** (plausibler Lenkwinkel). `mount_deg` selbst steht im Log bei **0** - der eingegebene 88er Wert steht also NICHT in dieser Spalte |
+| B11.28c | **Es gibt ZWEI Lenkwinkel-Pfade - und nur der interne ist auffaellig** | Betreiber: "der gerechnete Lenkwinkel des Knicklenkers passt etwa in AgOpenGPS". Die Log-Spalte `wheel_deg` ist beim Knicklenker konstant -91 Grad (B11.27b), AOG zeigt aber einen plausiblen Wert. **Der interne Lenkwinkel (Log) und der an AOG gesendete sind also NICHT dieselbe Groesse** - vor jedem Eingriff klaeren, welcher Pfad `lastWheelAngleDeg` speist |
+
+**Konsequenz fuer V3:** `wheelUse` kommt aus `lastWheelAngleDeg`. Solange nicht bewiesen ist, dass
+dort der BRAUCHBARE Wert steht (und nicht der eingefrorene Offset), darf V3 nicht darauf aufsetzen.
+Die Bedingung `wheelAngleAvailable` (B11.27d) muss deshalb zuerst PRUEFEN, ob der Wert variiert -
+ein konstantes `wheel_deg` ist der Ausschluss, egal wie plausibel der Zahlenbereich aussieht.
