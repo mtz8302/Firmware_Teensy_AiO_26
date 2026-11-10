@@ -437,3 +437,16 @@ Punkte direkt. Werkzeug: `_a1109_zahlen.ps1`.
   Das erklaert, warum die Spitzen beim Knicklenker ungebremst durchgehen.
 * **Offen:** `rateLimitMarginDegS` und die \"raises\" (`rl_path`, Attitude-Rate) gehen in `rl_allowed`
   mit ein - die Rueckrechnung oben ist deshalb eine OBERGRENZE fuer den Lenkwinkel.
+### Replay V1 (2026-11-09): Snap auf die Physik begrenzen - wirkt, aber moderat (B11.25)
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.25a | **Der Snap setzt den GESAMTEN Residual in EINEM Frame** | `HeadingBridge.cpp:3517/3560` (Sim-Kopie): `step = resid;` im Snap-Zweig - unabhaengig von der Physik. Gemessen im PP-Log bei t=2366,1: Residual 12,37 Grad -> 11 Grad Sprung in 100 ms = 110 Grad/s bei 1,7 m/s (physikalisch unmoeglich) |
+| B11.25b | **V1 (Snap auf `kinematicRateBoundDegS()*dt` begrenzen) wirkt messbar** | Host-Sim, 3000 Frames, Sim-Baseline als Bezug: Rate p99 **29,0 -> 24,0**, max **86 -> 53** (-38 %), Treue sd **9,65 -> 9,39** und p95 **8,60 -> 8,27** (beides leicht BESSER). Echte Kurven bleiben unberuehrt, weil ihr Residual unter `snapDeg` bleibt |
+| B11.25c | **Die volle Wirkung braucht V3 - und V3 ist im Sim nicht pruefbar** | V3 (Fallback-Lenkwinkel per `SIM_RATE_WHEEL_DEG` verkleinern) aendert **nichts**: V3 allein = Baseline, V1+V3 = V1. Grund: im Sim wird der Fallback-Zweig nicht erreicht, `wheelQualityOkState` verhaelt sich dort anders als im Feld (Feld: wq = 0, B11.22). **Eichgrenze der Sim** - solche Zweig-Fragen muessen aus dem Log beantwortet werden (B11.24) |
+
+**Bewertung:** V1 ist ein sauberer, kleiner Eingriff mit belegter Wirkung (Spitzen gekappt, Treue
+nicht verschlechtert) und betrifft beide Fahrzeugtypen. Die Spitzen-OBERGRENZE bleibt aber durch den
+blinden Fallback-Winkel (B11.23a) zu weit - vollstaendig wird es erst mit V3, das den Deckel an
+einen echten Lenkwinkel bindet. Reihenfolge deshalb: V1 uebernehmen, V3 danach anhand der Log-Zahlen
+dimensionieren.
