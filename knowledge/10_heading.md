@@ -525,3 +525,21 @@ idx 11 = psi_deg (0...360), **idx 21 = mount_deg (-91,60)**. **B11.27b/c gelten 
 `wheelQuality > 0` UND `enc_cnt`-Wechsel UND `|wheel|` variiert. Der Knicklenker-Fall faellt durch alle drei.
 **Der eigentliche Fehler ist aber nicht V3, sondern B11.29c**: ein mit `wheelQuality = 0` markierter Wert
 sollte nicht als -91 Grad weitergegeben werden.
+
+### ZURUECKNAHME B11.29b/c + ANPASSUNG 2026-11-10: AOG-Wert im Webinterface (B11.30)
+
+**Betreiber-Klarstellung (11-10), die zwei meiner Schluesse widerlegt:**
+1. "Wenn ich **-92** als Antenna offset in AOG eintrage, faehrt der Traktor rueckwaerts, die **+88** stimmen."
+2. "Der angezeigte Lenkwinkel in AOG **stimmt** - bei VWAS (Keya) und beim gerechneten Lenkwinkel (Knicklenker ohne echten WAS)."
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.29b/c ZURUECKGENOMMEN | **Kein floatender ADC-Pin als gesendeter Lenkwinkel** | Der Betreiber bezeugt, dass AOG den richtigen Lenkwinkel anzeigt - bei VWAS UND beim gerechneten Weg. Die Kette (B11.29a) bleibt belegt, aber der konstante Wert (-91,02 bei Index 10) ist **nicht** der gesendete Lenkwinkel. Die Spaltenzuordnung der **127-Feld-Logs** ist damit NICHT abschliessend geklaert: die Firmware schreibt `wheel_deg` heute an **Index 11** (`HeadingBridge.cpp:5071`), in den Logs liegt bei Index 10 ein konstanter Wert. Vor jeder weiteren Rechnung auf diesen Spalten muss die Log-Version eindeutig bestimmt werden |
+| B11.30a | **DAS WAR DER FEHLER: das Webinterface zeigte den ROHWERT der Messung** | Der Code sagt selbst (`SimpleWebManager.cpp:2181`): "mountOffsetMeasuredDeg -> enter **-mountOffsetMeasuredDeg** as AgOpenGPS dual heading offset". Angezeigt wurde aber `bridgeMountOffsetDeg` = der Rohwert (gemessen **-92,13**). Der Betreiber tippt die angezeigte Zahl ab -> in AOG steht **-92** -> **Traktor faehrt rueckwaerts**. Richtig ist das Negative: **+92,13** (bzw. sein Erfahrungswert +88) |
+| B11.30b | **Angepasst (Firmware)** | `SimpleWebManager.cpp:2202` liefert jetzt zusaetzlich `bridgeMountOffsetAogDeg = -mountOffsetMeasuredDeg` (Rohwert bleibt erhalten); `TouchFriendlyVWASConfigPage.h` zeigt **"AgOpenGPS value: +xx.xx (n=..., raw -92.13)"** statt "measured: -92.13", Platzhalter entsprechend. Defensiv: fehlt das neue Feld, bildet die UI den Wert aus dem Rohwert |
+| B11.30c | **Warum -92 und +88 beide "fast quer" sind** | Die Antenne steht quer (~90 Grad). **+88 und -92 beschreiben dieselbe Geometrie, aber mit umgekehrter Fahrtrichtung** - und die Richtung entscheidet ueber vorwaerts/rueckwaerts. Deshalb ist die Differenz 180,13 Grad und nicht 4 Grad; die "2 Grad" sind nur der Abstand zur Querlage (B11.28a) |
+
+**Offen (bewusst nicht geaendert):** Die gemessene Zahl (-92,13) und der Erfahrungswert des Betreibers (+88)
+liegen 4,13 Grad auseinander. Das ist **nicht** die Konvention (die ist 180 Grad), sondern die Genauigkeit der
+Messung. Ob die Messung selbst einen systematischen Fehler hat, ist mit einem Feldversuch zu klaeren -
+bis dahin bleibt die Anzeige bei "was gemessen wurde, in AOG-Konvention".
