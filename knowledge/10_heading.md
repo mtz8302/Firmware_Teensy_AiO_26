@@ -450,3 +450,21 @@ nicht verschlechtert) und betrifft beide Fahrzeugtypen. Die Spitzen-OBERGRENZE b
 blinden Fallback-Winkel (B11.23a) zu weit - vollstaendig wird es erst mit V3, das den Deckel an
 einen echten Lenkwinkel bindet. Reihenfolge deshalb: V1 uebernehmen, V3 danach anhand der Log-Zahlen
 dimensionieren.
+
+### V3-Analyse 2026-11-09: Deckel an den ECHTEN Lenkwinkel binden (B11.26)
+
+Config-Werte (`HeadingBridge.h`): `rateLimitWheelFallbackDeg = 15,0` Grad, `rateLimitMarginDegS = 2,0`,
+`rateLimitWheelSlackDeg = 2,0`, `rateLimitPathFactor = 1,25`, `rateLimitAttFactor = 1,25`. Werkzeug:
+`_a1109_v3.ps1`.
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.26a | **Beim Fendt wuerde V3 den Deckel etwa HALBIEREN - die gewuenschte Wirkung** | PP-Log (Ackermann, L 2,50 m): `abs(wheel)` p50 **1,8** / p90 10,3 / p99 28,0 Grad. Deckel HEUTE (15-Grad-Fallback) p50 **5,5** / p90 17,9 Grad/s, mit ECHTEM Lenkwinkel p50 **3,3** / p90 6,8 Grad/s. **In 88,8 % der Frames waere er enger** (5735 von 6459) |
+| B11.26b | **Die Nebenwirkung in Kurven ist klein und bezifferbar** | Nur Frames mit `v > 2 m/s` (darunter ist der Positionskurs unbrauchbar): **60 Kurvenframes** im PP-Log, davon heute gebremst **1 (1,7 %)**, mit echtem Lenkwinkel **29 (48,3 %)** = **0,45 % aller Frames**. Die zuvor berechneten 96,9 % waren durch Schleichfahrt-Rauschen verzerrt (3064 statt 60 "Kurvenframes") |
+| B11.26c | **Beim Knicklenker ist `wheel_deg` UNBRAUCHBAR als Grundlage** | `abs(wheel)` p50 **91,0** / p90 91,1 / p99 91,3 Grad - praktisch konstant 91 Grad, also kein Lenkwinkel. Mit diesem Wert waere der Deckel **weiter** statt enger (p50 30,5 gegen 18,3 Grad/s). **V3 darf dort nicht auf `wheel_deg` aufsetzen** - der Knicklenker braucht einen anderen Bezug (Knickwinkel-Kinematik aus dem eigenen Beobachter, B11.24c: der laeuft dort nicht) |
+
+**Fazit:** V3 ist beim **Ackermann-Zweig** gut begruendet (Deckel halbiert, 0,45 % Kurvenframes
+betroffen) und braucht dort nur eine andere Quelle fuer `wheelUse` - den VWAS-Lenkwinkel, dessen
+Nullpunkt beim Fendt nachweislich gelernt ist (B11.24a: 255 Fits, HOLD). **Beim Knicklenker ist V3
+in dieser Form nicht anwendbar**; dort ist die Frage zuerst, woher ein brauchbarer Lenkwinkel
+kommen soll. Das ist eine Zweig-Entscheidung, keine globale Aenderung.
