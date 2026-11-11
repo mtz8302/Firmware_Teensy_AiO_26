@@ -569,3 +569,24 @@ in der Kurve weit. **Reihenfolge bleibt: (1) V1 (belegt, unabhaengig), (2) `wq` 
 Spalte `i+2`, weil der Regex NACH "HR," beginnt - `v` liegt auf Index **3**, `az_out` auf **48**,
 `veh_type` auf **124**; (b) **PowerShell ist case-insensitiv**: `$V`/`$v`, `$K`/`$k` und `$M`/`$m`
 sind JEWEILS DIESELBE Variable - das hat zwei Laeufe still verfaelscht, bevor es auffiel.
+
+### B11.32 - V1 IST IN DER FIRMWARE (2026-11-10, `Teensy_AiO` d6d235f)
+
+**Was gebaut wurde:** der Snap begrenzt sich jetzt selbst auf die Physik. Zwei Stellen in
+`HeadingBridge.cpp` setzten bisher den GESAMTEN Residual in EINEM Frame:
+
+| Stelle | vorher | jetzt |
+|---|---|---|
+| `attQ != 1` (sauberer Epoch, Zeile ~3162) | `step = resid;` | `step` auf `kinematicRateBoundDegS()*dt` gekappt, `status.outLimClip = 1` |
+| `confirmed` (bestaetigter Sprung, Zeile ~3211) | `step = resid;` | derselbe Deckel |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.32a | **Die Groesse des Fehlers** | 12 Grad Residual bei 1,7 m/s sind **120 Grad/s**; die Maschine kann dort ~11 Grad/s. Das war die Quelle der 3...5-Grad/Frames-Spitzen (B11.2x) |
+| B11.32b | **Warum echte Kurven unberuehrt bleiben** | `kinematicRateBoundDegS()` wird mit `includeRaises=true` benutzt (Default) - also inklusive Pfadkurs und gemessener Gierrate. Eine echte Wendung liegt INNERHALB des Bandes, der Deckel greift dort nicht |
+| B11.32c | **Warum es nicht haengen kann** | Die bestehende PERSISTENCE laesst einen Rest, der `outSnapValveMs` (1000 ms) lang in DIESELBE Richtung zeigt, als Rampe mit `liveRampDegPerS` durch. V1 verzoegert damit nur den ERSTEN Frame eines Artefakts, nicht einen echten Sprung |
+| B11.32d | **Sim-Messung (Commit bf7e738, 3000 Frames)** | Rate p99 **29,0 -> 24,0**, max **86 -> 53**; Treue sd 9,65 -> 9,39, p95 8,60 -> 8,27; echte Kurven unveraendert. Der Sim baute es mit `SIM_SNAP_PHYS`; die Firmware hat es jetzt **immer an** |
+| B11.32e | **Build** | `pio run -e teensy41` **SUCCESS**, 51,9 s. Nur die vorbestehenden `-fno-rtti`-Warnungen fuer C-Dateien |
+
+**Naechster Schritt (unveraendert):** `wq` ehrlich machen (B11.24a: der Fendt-Nullpunkt IST
+gelernt, 255 Fits/HOLD - die Streuungsschwelle verweigert ihn). Erst danach greift V3.
