@@ -590,3 +590,36 @@ sind JEWEILS DIESELBE Variable - das hat zwei Laeufe still verfaelscht, bevor es
 
 **Naechster Schritt (unveraendert):** `wq` ehrlich machen (B11.24a: der Fendt-Nullpunkt IST
 gelernt, 255 Fits/HOLD - die Streuungsschwelle verweigert ihn). Erst danach greift V3.
+
+### B11.33 - KORREKTUR: `wq` ist NICHT 0 - V3 ist beim Fendt schon aktiv (2026-11-10)
+
+**Anlass:** Betreiber-Frage "jetzt wq?". Vor dem Bauen nachgemessen - Ergebnis: die Zahl ist gesund,
+und mehrere fruehere Befunde beruhten auf einem **Spaltenfehler**.
+
+Die Ursache des Fehlers: der Log-Regex beginnt NACH "HR,", also ist **`p[i]` == Spalte `i+2`**.
+`wq` = Spalte 58 = **Index 56** (nicht 57), `zo_fit` = **106**, `zo_st` = **105**, `zo_res` = **104**.
+
+| Log | veh | wq p05 | p50 | p95 | < 30 | > 40 |
+|---|---|---|---|---|---|---|
+| hof bach Baeume 2x | 0 | 0 | **61** | 98 | 17,2 % | 78,4 % |
+| Baeume chaos | 0 | 32 | **53** | 95 | 2,4 % | 87,5 % |
+| Schleichfahrt roll | 0 | 40 | **55** | 89 | 0,6 % | 94,4 % |
+| baeume bruecke | 0 | 35 | **53** | 91 | 3,0 % | 92,2 % |
+| Bruecke...PP | 0 | 36 | **46** | 90 | 0,0 % | 51,6 % |
+| **Knicklenker (3x)** | **2** | 0 | **0** | 0 | **100 %** | 0 % |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.33a | **`wq` ist beim Ackermann 46...61 - also UEBER `wheelQualityHighPct` (40)** | Schwellen `wheelQualityLowPct = 30`, `wheelQualityHighPct = 40` (`HeadingBridge.h`), Hysterese in `HeadingBridge.cpp:2334-2339`. Bei wq 46...61 ist `wheelQualityOkState` **true** |
+| B11.33b | **V3 IST BEREITS AKTIV - der Deckel rechnet mit dem ECHTEN Lenkwinkel** | Aus `rl_allowed` (Index 82) und v rueckgerechnet: p05 **2,50** / p50 **6,72** / p95 **51,82** Grad. Der Fallback (15 + 2 Slack) waere **konstant 17,0** - ist er nicht. Der echte `abs(wheel)` liegt bei p50 1,59 / p95 15,25 |
+| B11.33c | **Beim Knicklenker ist wq = 0 - und das ist RICHTIG** | 100 % der Frames unter 30, weil ohne Encoder `isHealthy()` false ist (kein Lenkwinkel-Signal). Dort greift der Fallback 15 Grad wie entworfen. **Es gibt dort nichts zu "reparieren"** |
+| B11.33d | **`rl_clip` zeigt: der Deckel arbeitet** | 30,8 % der Frames mit v > 0,5 wurden begrenzt - nicht "nie", wie ein konstanter Fallback vermuten liesse |
+
+**Damit sind zurueckgenommen:** B11.23a ("wq ~ 0 in allen acht Logs") gilt nur fuer die **drei
+Knicklenker-Logs**; B11.26/B11.27d ("V3 bauen") ist fuer den Ackermann **gegenstandslos, weil V3 dort
+schon laeuft**; B11.31 ("Parameter-Schrauben ist der einzige Hebel") gilt ebenfalls nur fuer den
+Knicklenker-Zweig.
+
+**Was bleibt:** V1 (B11.32) war der richtige und einzige noetige Eingriff - die Spitzen kamen vom
+SNAP, nicht vom Deckel. Fuer den Knicklenker bleibt die Frage, woher ein brauchbarer Lenkwinkel
+kommen soll (eigener Beobachter, B11.24c) - das ist eine Fahrzeug-Aufgabe, keine Qualitaets-Aufgabe.
