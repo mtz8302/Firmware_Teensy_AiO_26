@@ -543,3 +543,29 @@ sollte nicht als -91 Grad weitergegeben werden.
 liegen 4,13 Grad auseinander. Das ist **nicht** die Konvention (die ist 180 Grad), sondern die Genauigkeit der
 Messung. Ob die Messung selbst einen systematischen Fehler hat, ist mit einem Feldversuch zu klaeren -
 bis dahin bleibt die Anzeige bei "was gemessen wurde, in AOG-Konvention".
+
+### B11.31 - Lohnt Parameter-Schrauben an V3? GEMESSEN: nein, aus einem Strukturgrund (2026-11-10)
+
+Werkzeug: `_a1109_v3param.ps1` (Fendt-PP-Log, 6876 Frames, v > 2 m/s). Formel aus
+`HeadingBridge.cpp:1316-1342`; im Feld ist `wheelQualityOkState` IMMER false (wq = 0), also ist
+`rateLimitWheelFallbackDeg` der **einzige** wirksame Parameter (`rateLimitWheelSlackDeg` wirkt nur
+im vertrauten Zweig, `-PathFactor`/`-AttFactor` sind fuer die Ausgabesperre aus, B10.21).
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.31a | **Kleinerer Fallback klemmt MEHR - monoton** | 15 Grad: 13,00 % der Frames geklemmt; 10: 15,61 %; 5: 19,53 %; 3: 21,00 %. Bei 3 Grad werden 73,6 % der schnellen Frames gebremst |
+| B11.31b | **Die ruhigen Frames werden NIE geklemmt - bei KEINEM Parameter** | omega <= 1,5 Grad/s: **0,00 %** geklemmt in allen acht Varianten (n = 782). Der Deckel kann dort nichts kappen, weil die Rate schon unter ihm liegt |
+| B11.31c | **Parameter koennen Gerade und Kurve NICHT unterscheiden** | Ein KONSTANTER Ersatzlenkwinkel klemmt uniform. V3 (echter Lenkwinkel) klemmt 18,73 % - vergleichbar mit fb ~ 6 - aber mit einer ANDEREN ORTSVERTEILUNG: dort wo der Lenkwinkel klein ist, ist der Deckel eng; in der Kurve weit. Genau das kann kein Parameter |
+| B11.31d | **Der Blocker fuer V3 ist NICHT der Deckel, sondern `wq`** | `wheelQualityOkState` ist im Feld immer false, weil `wq = 0`. Solange das so ist, ist der VWAS-Lenkwinkel fuer die Bridge nicht benutzbar - unabhaengig von jedem Deckel-Parameter |
+
+**Antwort auf die Betreiber-Frage:** Parameter-Schrauben bringt **wenig**. Es verschiebt nur die
+Klemmhaeufigkeit (13...21 %), nicht deren ORT. Der eine Parameter, der im Feld wirkt, ist ein
+konstanter Winkel - und der kann die eine Aufgabe nicht loesen, um die es geht: auf der Geraden eng,
+in der Kurve weit. **Reihenfolge bleibt: (1) V1 (belegt, unabhaengig), (2) `wq` ehrlich machen**
+(B11.24a: der Fendt-Nullpunkt IST gelernt, 255 Fits/HOLD - die Streuungsschwelle verweigert ihn),
+**(3) dann V3**, das ohne (2) nicht greift.
+
+**Eigene Fehler in dieser Messung (dokumentiert, damit sie nicht wiederkehren):** (a) `p[i]` ist
+Spalte `i+2`, weil der Regex NACH "HR," beginnt - `v` liegt auf Index **3**, `az_out` auf **48**,
+`veh_type` auf **124**; (b) **PowerShell ist case-insensitiv**: `$V`/`$v`, `$K`/`$k` und `$M`/`$m`
+sind JEWEILS DIESELBE Variable - das hat zwei Laeufe still verfaelscht, bevor es auffiel.
