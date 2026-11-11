@@ -93,3 +93,34 @@ Lenk-Zappel-Frames mit einem Roll-Sprung zusammen, 43...95 % mit einem Heading-S
 **Konsequenz (noch NICHT gebaut):** die Roll-Qualitaet (`uniPtchStdDevDeg`, `uni_len`) muss die
 AUSGABE steuern - bei schlechter Epoche halten bzw. die Rampen-Rueckkehr nutzen -, nicht nur den
 Haltewert. Das ist eine Aenderung an der Ursache; "im Stand halten" waere nur ein Symptom.
+### B11.34 - Roll-Drift: die Indikatoren EXISTIEREN und filtern schon - was uebrig bleibt (2026-11-10)
+
+Betreiber-Frage: "was ist aus dem Roll-Drift geworden? gibt es Qualitaetsindikatoren, die das
+anzeigen? dann koennten wir es filtern".
+
+**Antwort: ja, es gibt sie - und der Filter benutzt sie bereits.** Gemessen am 11-09 (PP-Log,
+6877 Frames; Knicklenker-Log, 2730 Frames):
+
+| | PP (Fendt) | Knicklenker |
+|---|---|---|
+| **ROH** `dualRoll` Spanne | 13,69 Grad | **48,34 Grad** |
+| **AUSGABE** an AOG Spanne | **7,60 Grad** | **19,80 Grad** |
+| Ausgabe im Stand (p95) | **5,20 Grad** | 0,00 Grad |
+| `roll_src` = 4 (gehalten) | 1233 Frames | 1044 Frames |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.34a | **`uni_ptchsd` TRENNT die Roll-Ausreisser mit Faktor 27** | Roll-Gruppen im PP-Log: `abs(roll) <= 5` -> uni_ptchsd p50 **1,17** Grad (n=5781); `abs(roll) > 10` -> **32,16** Grad (n=445). `uni_hdgsd` 0,52 -> 29,03; `roll_src` 1 -> **4** |
+| B11.34b | **Der Filter greift schon und halbiert bis drittelt die Spanne** | Roh -> Ausgabe: PP 13,69 -> **7,60** Grad; Knicklenker 48,34 -> **19,80** Grad. Mechanik: `rollQualitySdDeg` (Hysterese 3/6 Grad) + `rollQualityBaselineTolPct`, `roll_src = 4` heisst "gehalten" (`HeadingBridge.cpp:1828-1832, 1872`) |
+| B11.34c | **Was uebrig bleibt: der Stand** | PP-Ausgabe im Stand (v < 0,3): p95 **5,20** Grad, Spanne **6,70** Grad. Bei 2,2 m Antennenhoehe sind das `sin(3,35 Grad) * 2,2 m` = **~13 cm** - genau die beobachteten 15 cm |
+| B11.34d | **DORT HELFEN DIE QUALITAETSINDIKATOREN NICHT** | Im Stand ist die Qualitaet GUT (`uni_ptchsd` p50 **1,17** Grad, also unter `rollQualitySdDeg`) - der Empfaenger meldet keinen Fehler. Die Schwankung ist also kein erkanntes Artefakt, sondern **echtes Empfaengerrauschen bei stehender Maschine** |
+
+**Schlussfolgerung:** Filtern nach Qualitaet ist bereits ausgeschoepft. Was im Stand bleibt, laesst
+sich nur ueber ein ANDERES Kriterium daempfen: **eine Querneigung kann sich im Stand nicht
+aendern** (ausser durch Einfedern, und das ist langsam). Ein Stand-Gate (v unter Schwelle ->
+Roll-Zeitkonstante hoch / halten) ist damit physikalisch begruendet und braucht keinen
+Qualitaetsindikator - es braucht das Tempo.
+
+**Nicht gebaut** (bewusst): erst pruefen, ob die 15 cm in AOG wirklich als Positionstoerung
+ankommen - AOG rechnet `sin(roll) * Antennenhoehe` in einen Querversatz um, und ob das im Stand
+sichtbar stoert, ist eine Betreiber-Entscheidung, keine Rechenfrage.
