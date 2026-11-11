@@ -124,3 +124,29 @@ Qualitaetsindikator - es braucht das Tempo.
 **Nicht gebaut** (bewusst): erst pruefen, ob die 15 cm in AOG wirklich als Positionstoerung
 ankommen - AOG rechnet `sin(roll) * Antennenhoehe` in einen Querversatz um, und ob das im Stand
 sichtbar stoert, ist eine Betreiber-Entscheidung, keine Rechenfrage.
+
+### B11.35 - Baseline als Roll-Kriterium: GEPRUEFT und VERWORFEN (2026-11-10)
+
+Betreiber-Idee: die Baseline-Laenge als Kriterium nehmen. Sie ist bereits im Roll-Gate
+(`rollQualityBaselineTolPct`), die Frage war, ob sie den Rest-Fehler im Stand anzeigt.
+
+**Messung (PP-Log, nur Stand v < 0,3, Roll-AUSGABE nach |baseline_dev| gruppiert):**
+
+| abs(baseline_dev) | n | roll p05 | roll p95 | Spanne | uni_len p95 |
+|---|---|---|---|---|---|
+| < 1 % | 996 | -3,50 | 5,40 | **8,90** | 0,7210 |
+| 1...2 % | 1082 | -1,50 | 4,80 | 6,30 | 0,7290 |
+| 2...3 % | 419 | -1,30 | 5,00 | 6,30 | 0,7340 |
+| **> 3 %** | 322 | 0,30 | 4,90 | **4,60** | 0,7610 |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.35a | **Die Baseline trennt den Roll-Fehler NICHT - sie korreliert UMGEKEHRT** | Bei bester Baseline (`|dev| < 1 %`) ist die Roll-Spanne mit **8,90 Grad** am GROESSTEN, bei schlechtester (`> 3 %`) mit 4,60 Grad am kleinsten |
+| B11.35b | **Warum das physikalisch plausibel ist** | Der Roll kommt aus dem PITCH der Baseline. Bei stehender Maschine sehen beide Antennen dieselben Satelliten, die Neigung ist geometrisch bestimmt - die geloeste LAENGE hat darauf kaum Einfluss. Eine schwankende Laenge aendert die Neigung nicht, sie aendert nur den Skalenfaktor |
+| B11.35c | **Die Baseline-Geometrie selbst ist im Stand unruhig** | `uni_len` schwankt im Stand um **48 mm** (0,6850...0,7330) bei 711 mm mechanisch = **6,8 %**; `baseline_dev` von -3,3 bis +2,8 %. Beim Knicklenker ist die Loesung im Stand **kaputt**: `uni_len` p95 = **6,894 m**, `bdev` p95 = **330,5 %** |
+| B11.35d | **Damit ist die Kandidatenliste fuer den Stand-Fehler erschoepft** | `uni_ptchsd` trennt die GROSSEN Ausreisser (Faktor 27, B11.34a) und wird benutzt; `baseline_dev`/`uni_len` trennen nicht (B11.35a); `roll_src = 4` markiert nur die bereits gefilterten Frames. Fuer die restlichen +-4...5 Grad im Stand gibt es **keinen** Qualitaetsindikator - nur das Tempo |
+
+**Konsequenz:** Ein Stand-Gate bleibt der einzige physikalisch begruendete Weg, ist aber
+**nicht** durch einen Indikator ausloesbar, sondern nur durch `v`. Der Knicklenker-Befund
+(`uni_len` bis 6,9 m im Stand) ist ein EIGENER Fehler und gehoert nicht zum Roll - dort ist die
+Lage-Loesung selbst unbrauchbar, was die 19,80 Grad Roll-Spanne in Fahrt erklaert.
