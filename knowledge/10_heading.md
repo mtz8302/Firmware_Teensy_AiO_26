@@ -658,3 +658,36 @@ Das Problem sind die NULLEN und die Ausreisser.
 
 **Nicht die Loesung:** an Roll- oder Heading-Filtern schrauben (B11.34/B11.35) - die Eingangsdaten
 fehlen, nicht die Glaettung.
+
+### B11.37 - DIE URSACHE des Knicklenkers: 37 % Fix-Verlust (2026-11-10)
+
+Betreiber-Angabe: **beide Antennen vorn, QUER zur Fahrtrichtung**. Damit ist die Gelenk-Hypothese
+widerlegt (und erklaert, warum `uni_ptchsd` = Roll ist). Die Messung zeigt eine andere Ursache.
+
+| Log | Frames | **sats = 0** | qf = 0 | qf = 4 | qf = 5 | Zeilenabstand |
+|---|---|---|---|---|---|---|
+| **Knicklenker 3x Baeume** | 2929 | **37,3 %** (1093) | **1093** | 832 | 1004 | 100 ms |
+| Fendt PP | 6877 | **1,3 %** (87) | **87** | 5923 | 867 | 100 ms |
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.37a | **`qf = 0` UND `sats = 0` heisst: der Empfaenger liefert KEINE Daten** | Nicht "kein Fix mit 10 Satelliten", sondern gar nichts. 1093 von 2929 Frames beim Knicklenker |
+| B11.37b | **Es passiert BEI DER FAHRT, nicht im Stand** | Die Ausfall-Gruppe hat v p50 **2,38 m/s**, die Gruppe mit Lage 1,89 m/s |
+| B11.37c | **Es ist FAHRZEUGSPEZIFISCH, nicht umgebungsbedingt** | Beide Logs 10 Hz, gleiche Firmware, beide unter Baeumen - und trotzdem 1,3 % gegen 37,3 %. Der Unterschied ist das Fahrzeug (Antennenplatz, Kabel, Strom, Konfiguration) |
+| B11.37d | **Damit sind ALLE Knicklenker-Symptome Folgeerscheinungen** | 61 % deadreck, `sigma` 30, `wq` = 0 (kein Encoder), Roll-Spanne 19,80 Grad (`|dualRoll|` p95 = **72,55 Grad** bei vorhandener Lage), Heading-Spitzen - alles Folgen des Fix-Verlusts, nicht eigene Fehler |
+
+**Was zu pruefen ist (Reihenfolge):**
+
+1. **Antennenkabel und Stecker** (Wackelkontakt bei Fahrt/Vibration).
+2. **Stromversorgung des Empfaengers** (Spannungseinbruch beim Lenken - der Knicklenker hat eine
+   Hydrauliklenkung mit hoher Lastspitze).
+3. **Antennenplatz:** quer vorn - schattet die Kabine oder ein Aufbau ab? Der Fendt hat eine andere
+   Geometrie.
+4. **Empfaenger-Konfiguration vergleichen** (Fendt gegen Knicklenker): gleiche Rate, gleiche
+   Nachrichten (GGA + UNIHEADINGA), gleiche Firmware.
+5. **Baseline verlaengern** (quer sind bei ~2 m Spurweite 1,5...1,8 m moeglich statt 0,82 m):
+   mehr Marge gegen Ambiguity-Abbruch, und die Roll-Genauigkeit steigt mit der Laenge.
+
+**Nicht die Loesung:** Filter (B11.34/B11.35) oder Parameter (B11.31). Bei 37 % fehlenden Daten
+gibt es nichts zu glaetten. **V1 (B11.32) hilft trotzdem** - es begrenzt die Spitzen, die aus dem
+Hin-und-Her zwischen Messung und deadreck entstehen.
