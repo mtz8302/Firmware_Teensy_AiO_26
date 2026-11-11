@@ -623,3 +623,38 @@ Knicklenker-Zweig.
 **Was bleibt:** V1 (B11.32) war der richtige und einzige noetige Eingriff - die Spitzen kamen vom
 SNAP, nicht vom Deckel. Fuer den Knicklenker bleibt die Frage, woher ein brauchbarer Lenkwinkel
 kommen soll (eigener Beobachter, B11.24c) - das ist eine Fahrzeug-Aufgabe, keine Qualitaets-Aufgabe.
+
+### B11.36 - Knicklenker: die Lage-Loesung ist ueber weite Strecken NICHT VERFUEGBAR (2026-11-10)
+
+Betreiber-Frage: "was kann man beim Knicklenker machen?". Erst gemessen, was wirklich fehlt.
+
+| Log | `uni_len` = 0 | `uni_len` p95 | `uni_hdgsd` p95 | `sigma` p50 / p95 | `src` = deadreck | `att_q` = 0 |
+|---|---|---|---|---|---|---|
+| 3x Baeume | **37,3 %** | 2,586 m | **382,83 Grad** | **30,00 / 30,00** | **1677 von 2730 (61 %)** | 2354 von 2929 (80 %) |
+| hof bach | 5,4 % | 1,003 m | 469,85 Grad | 5,78 / 9,78 | 51 | 721 von 1787 (40 %) |
+| Knicklenker 0 Hof | 17,0 % | 4,890 m | 120,57 Grad | 10,39 / 30,00 | 807 von 2730 (30 %) | 1379 von 2729 (51 %) |
+
+`base_ref` = **0,802...0,828 m** (gelernt), `uni_len` p50 = 0,802...0,827 m -> der MEDIAN passt.
+Das Problem sind die NULLEN und die Ausreisser.
+
+| # | Befund | Beleg |
+|---|---|---|
+| B11.36a | **Der Empfaenger liefert in 5...37 % der Frames GAR KEINE Lage** | `uni_len = 0`. Bei `uni_len = 0` gibt es keinen Pitch/Pitch-sigma - also auch keinen Roll und keine Richtung aus der Baseline |
+| B11.36b | **Die gelieferte Lage ist zu 5 % voellig unbrauchbar** | `uni_hdgsd` p95 = **120...470 Grad** (1-sigma!). Ein Frame mit 470 Grad sigma ist keine Messung |
+| B11.36c | **Die Bridge reagiert RICHTIG darauf - sie hat nur nichts zu ersetzen** | `att_q = 0` in 40...80 % der Frames (das Gate erkennt es), `src = deadreck` in 30...61 %, `sigma` steigt ehrlich auf 30,00 (Deckel). Die Kette luegt nicht - sie hat keine Daten |
+| B11.36d | **Damit ist der Engpass NICHT der Filter, sondern die Antennen-Geometrie** | `uni_len` p50 passt zur Referenz (0,80...0,83 gegen 0,802...0,828). Die Nullen und die 470-Grad-Frames sind Loesungsabbrueche, keine Skalenfehler |
+
+**Was das fuer den Knicklenker bedeutet (Rangfolge nach Wirkung):**
+
+1. **Sitzen BEIDE Antennen auf DEMSELBEN Rahmen?** Bei einem Knicklenker ist das die entscheidende
+   Frage: sind sie ueber das Gelenk gespannt, misst die Baseline bei jeder Knickung den KNICKWINKEL
+   statt der Fahrtrichtung - und die Loesung bricht genau dann ab, wenn gelenkt wird. Das wuerde
+   die 37 % Nullen und die 61 % deadreck in `3x Baeume bach` (Wendemanöver) erklaeren.
+2. **Baseline verlaengern** (mehr Abstand = mehr Genauigkeit) - nur wenn 1. geklaert ist.
+3. **Einen Lenkwinkel beschaffen** (Knickwinkelsensor am Gelenk oder Encoder): ohne ihn hat das
+   Modell im deadreck-Zweig nichts, was die Drehung vorhersagt - und `wq` bleibt 0, der Deckel
+   laeuft auf dem 15-Grad-Fallback (B11.33c).
+4. **F9P statt UM982** waere ein Rueckschritt (kein UNIHEADINGA -> `att_q = 2`, das Gate faellt weg).
+
+**Nicht die Loesung:** an Roll- oder Heading-Filtern schrauben (B11.34/B11.35) - die Eingangsdaten
+fehlen, nicht die Glaettung.
